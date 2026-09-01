@@ -147,8 +147,86 @@ const bolt = mk(10, 6, [
   ],
 ]);
 
+// ---------- plop (8x8) — cannon projectile, a heavy brown-gunk blob ----------
+const plop = mk(8, 8, [
+  [
+    '...444..',
+    '..4d7d4.',
+    '.4d777d4',
+    '.4d887d4',
+    '..47774.',
+    '...444..',
+    '........',
+    '........',
+  ],
+]);
+
+// ---------- cracker (8x8) — orbiting cracker shard ----------
+const cracker = mk(8, 8, [
+  [
+    '..4222..',
+    '.4225224',
+    '.4255224',
+    '.4222224',
+    '.4223324',
+    '..4222..',
+    '........',
+    '........',
+  ],
+]);
+
+// ---------- boss (12x12) — The First Wind, a swirling gas cyclone ----------
+const bossFrames: string[][] = [
+  [
+    '............',
+    '....7777....',
+    '...799997...',
+    '..79cccc97..',
+    '..9cc9cc99..',
+    '.79cc99cc97.',
+    '.9cc999cc99.',
+    '..9cc99cc9..',
+    '..799cc997..',
+    '...799997...',
+    '....7777....',
+    '............',
+  ],
+  [
+    '............',
+    '....7777....',
+    '...799997...',
+    '..9cc9cc97..',
+    '..799cc997..',
+    '.9cc99cc997.',
+    '.79cc99cc99.',
+    '..9cc9cc99..',
+    '..799cc997..',
+    '...799997...',
+    '....7777....',
+    '............',
+  ],
+];
+const boss = mk(12, 12, bossFrames);
+const bossHit = mk(12, 12, bossFrames.map((f) => f.map((row) =>
+  row.split('').map((c) => (c === '7' ? 'c' : c === '9' ? '5' : c === 'c' ? '5' : c)).join(''))));
+
+// ---------- chest (12x8) — treasure chest (boss drops) ----------
+const chest = mk(12, 8, [
+  [
+    '............',
+    '..44444444..',
+    '.4222222224.',
+    '.4242224224.',
+    '.4444444444.',
+    '.4233333334.',
+    '.4233333334.',
+    '............',
+  ],
+]);
+
 export const SPRITES: Record<string, Sprite> = {
   crouton, croutonHit, bubble, bubbleHit, gem, bolt,
+  plop, cracker, boss, bossHit, chest,
 };
 
 // ---------- 8x8 bitmap font ----------

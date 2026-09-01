@@ -1,6 +1,7 @@
-// POOP SURVIVORS — M1
-// Core loop: move, Bubble chasers, Fart Whip auto-fire, XP gems + magnet,
-// level-up 3-choice, HP/invuln, 3:00 timer, death screen.
+// POOP SURVIVORS — M2
+// M1 core loop + the weapon FRAMEWORK: weapons as a data table, passive stat
+// multipliers, knockback, a boss (The First Wind) at 3:00, and the chest →
+// evolution system (Fart Whip max + Quick Hands + chest = SUPER FART).
 // Top-down 2D canvas, fixed timestep, seeded determinism, __cap probe.
 // Art: hand-authored pixel arrays over one 16-color palette, 8x8 bitmap font.
 
@@ -19,8 +20,8 @@ function mulberry32(seed: number) {
 
 // ---------- world / camera ----------
 const TILE = 16;
-const WORLD_W = 1280;            // 80 tiles
-const WORLD_H = 800;             // 50 tiles
+const WORLD_W = 1280;
+const WORLD_H = 800;
 const VIEW_W = 320;
 const VIEW_H = 240;
 
@@ -29,17 +30,10 @@ const PLAYER = {
   maxHp: 100, speed: 90, radius: 5,
   magnetBase: 26, magnetPerLevel: 1.5,
   invulnAfterHit: 0.8,
-  invulnOnLevel: 1.2,            // VS-verified: leveling grants brief invuln
+  invulnOnLevel: 1.2,
 };
 
-// ---------- enemies ----------
-const ENEMY = {
-  bubble: { hp: 6, speed: 34, dmg: 8, radius: 5, xp: 1 },
-};
-
-// ---------- XP curve (VS wiki). req to go N -> N+1 ----------
-// 1:5, 2:15, 3:25 ... +10 to 19:185; +13 from 20; +16 from 40;
-// one-time +600 wall at 20, +2400 wall at 40.
+// ---------- XP curve (VS wiki). req N -> N+1 ----------
 function xpToNext(level: number): number {
   let base: number;
   if (level < 20) base = 5 + 10 * (level - 1);
@@ -50,24 +44,61 @@ function xpToNext(level: number): number {
   return base;
 }
 
-// ---------- types ----------
-type Enemy = { x: number; z: number; hp: number; maxHp: number; speed: number; dmg: number; radius: number; xp: number; kind: string; hitT: number; wob: number };
-type Gem = { x: number; z: number; val: number; vx: number; vz: number; pulled: boolean; t: number };
-type Bullet = { x: number; z: number; vx: number; vz: number; life: number; dmg: number; ang: number };
+// ---------- weapons (data table) ----------
+// base dmg/cd, per-level deltas. Slot: 'weapon'. superfart is evolution-only.
+const WEAPONS: Record<string, {
+  name: string; desc: string; maxLvl: number;
+  baseDmg: number; baseCd: number; dmgPerLvl: number; cdPerLvl: number;
+  evolved: boolean;
+}> = {
+  fartwhip:   { name: 'Fart Whip',    desc: 'Piercing gusts in your facing dir', maxLvl: 8, baseDmg: 10, baseCd: 1.6, dmgPerLvl: 3, cdPerLvl: -0.04, evolved: false },
+  plopcannon: { name: 'Plop Cannon',  desc: 'Heavy aimed gunk blob',             maxLvl: 8, baseDmg: 22, baseCd: 2.4, dmgPerLvl: 8, cdPerLvl: -0.10, evolved: false },
+  crackerring:{ name: 'Cracker Ring', desc: 'Orbiting cracker shards',           maxLvl: 8, baseDmg: 6,  baseCd: 0.22, dmgPerLvl: 3, cdPerLvl: -0.004, evolved: false },
+  puddle:     { name: 'Puddle',       desc: 'Damaging puddles near you',         maxLvl: 8, baseDmg: 12, baseCd: 3.0, dmgPerLvl: 5, cdPerLvl: -0.06, evolved: false },
+  superfart:  { name: 'SUPER FART',   desc: 'A wide, devastating piercing beam', maxLvl: 8, baseDmg: 40, baseCd: 1.1, dmgPerLvl: 6, cdPerLvl: -0.02, evolved: true },
+};
+const PASSIVES: Record<string, { name: string; desc: string; maxLvl: number }> = {
+  meats:    { name: 'Meat Shakes',  desc: '+10% weapon damage / lv', maxLvl: 5 },
+  quick:    { name: 'Quick Hands',  desc: '-8% weapon cooldown / lv', maxLvl: 5 },
+  slippers: { name: 'Slippers',     desc: '+10% move speed / lv', maxLvl: 5 },
+  tp:       { name: 'TP Crown',     desc: '+8% XP gain / lv', maxLvl: 5 },
+};
+
+function wDmg(id: string, lvl: number): number { return (WEAPONS[id].baseDmg + WEAPONS[id].dmgPerLvl * (lvl - 1)) * G.stats.dmgMult; }
+function wCd(id: string, lvl: number): number { return Math.max(0.15, (WEAPONS[id].baseCd + WEAPONS[id].cdPerLvl * (lvl - 1)) * G.stats.cdMult); }
+
+// ---------- enemies ----------
+type Enemy = {
+  x: number; z: number; hp: number; maxHp: number; speed: number; dmg: number;
+  radius: number; xp: number; kind: string; hitT: number; wob: number;
+  kbx: number; kbz: number;
+};
+type Gem = { x: number; z: number; val: number; vx: number; vz: number; pulled: boolean };
+type Bullet = { x: number; z: number; vx: number; vz: number; life: number; dmg: number; ang: number; hitR: number; kind: string };
+type Zone = { x: number; z: number; r: number; life: number; tick: number; dmg: number };
 type DmgNum = { x: number; z: number; vy: number; t: number; txt: string; crit: boolean };
-type ItemOption = { id: string; name: string; desc: string; kind: 'weapon' | 'passive' | 'gold' | 'hp'; lvl: number };
+type Boss = { x: number; z: number; hp: number; maxHp: number; speed: number; dmg: number; radius: number; hitT: number; minionCd: number; wob: number };
 type Mode = 'title' | 'play' | 'levelup' | 'dead' | 'win';
+type WState = { lvl: number; cd: number; ang: number };
+type ItemOpt = { kind: 'weapon' | 'passive' | 'gold' | 'hp'; id: string; name: string; desc: string; lvl: number };
 
 type Game = {
   seed: number; rng: () => number;
   mode: Mode; time: number;
   player: { x: number; z: number; hp: number; face: number; moving: boolean; invuln: number; walkT: number };
-  enemies: Enemy[]; gems: Gem[]; bullets: Bullet[]; dmgNums: DmgNum[];
-  xp: number; level: number; xpNeed: number;
-  whip: { lvl: number; cd: number; cdMax: number; dmg: number };
-  options: ItemOption[];
-  flashT: number; shake: number; kills: number;
-  stats: { maxLevel: number; levelUps: number; gems: number; whipShots: number; nan: number; whipFiredAt: number[] };
+  enemies: Enemy[]; gems: Gem[]; bullets: Bullet[]; zones: Zone[]; dmgNums: DmgNum[];
+  xp: number; level: number; xpNeed: number; gold: number;
+  weapons: Record<string, WState>;
+  passives: Record<string, number>;
+  boss: Boss | null; chest: { x: number; z: number } | null;
+  options: ItemOpt[];
+  flashT: number; shake: number; evolutionT: number; evolved: boolean;
+  kills: number; bossKilled: number;
+  stats: {
+    maxLevel: number; levelUps: number; gems: number; nan: number;
+    shots: Record<string, number>; kbApplied: number; chestTaken: number;
+    dmgMult: number; cdMult: number; speedMult: number; xpMult: number;
+  };
   spawnCd: number; spawnInterval: number;
 };
 
@@ -77,16 +108,27 @@ function mkGame(seed: number): Game {
   return {
     seed, rng, mode: 'title', time: 0,
     player: { x: WORLD_W / 2, z: WORLD_H / 2, hp: PLAYER.maxHp, face: 0, moving: false, invuln: 0, walkT: 0 },
-    enemies: [], gems: [], bullets: [], dmgNums: [],
-    xp: 0, level: 1, xpNeed: xpToNext(1),
-    whip: { lvl: 1, cd: 0, cdMax: 1.6, dmg: 10 },
-    options: [], flashT: 0, shake: 0, kills: 0,
-    stats: { maxLevel: 1, levelUps: 0, gems: 0, whipShots: 0, nan: 0, whipFiredAt: [] },
-    spawnCd: 1.0, spawnInterval: 1.0,
+    enemies: [], gems: [], bullets: [], zones: [], dmgNums: [],
+    xp: 0, level: 1, xpNeed: xpToNext(1), gold: 0,
+    weapons: { fartwhip: { lvl: 1, cd: 0, ang: 0 } },
+    passives: {},
+    boss: null, chest: null,
+    options: [], flashT: 0, shake: 0, evolutionT: 0, evolved: false,
+    kills: 0, bossKilled: 0,
+    stats: { maxLevel: 1, levelUps: 0, gems: 0, nan: 0, shots: {}, kbApplied: 0, chestTaken: 0, dmgMult: 1, cdMult: 1, speedMult: 1, xpMult: 1 },
+    spawnCd: 1.0, spawnInterval: 1.1,
   };
 }
 
-// ---------- input (keyboard for humans, botDir for the harness) ----------
+function recomputeStats(): void {
+  const p = (id: string) => G.passives[id] || 0;
+  G.stats.dmgMult = 1 + 0.10 * p('meats');
+  G.stats.cdMult = Math.max(0.3, 1 - 0.08 * p('quick'));
+  G.stats.speedMult = 1 + 0.10 * p('slippers');
+  G.stats.xpMult = 1 + 0.08 * p('tp');
+}
+
+// ---------- input ----------
 const keys = new Set<string>();
 let _prevKeys = new Set<string>();
 let _nowKeys = new Set<string>();
@@ -97,14 +139,14 @@ window.addEventListener('keydown', (e) => {
   keys.add(k);
 });
 window.addEventListener('keyup', (e) => keys.delete(e.key.toLowerCase()));
-
 function syncKeys() { _prevKeys = _nowKeys; _nowKeys = new Set(keys); }
 function justPressed(k: string): boolean { return _nowKeys.has(k) && !_prevKeys.has(k); }
 function keyIndex(...ks: string[]): number {
   for (let i = 0; i < ks.length; i++) if (justPressed(ks[i])) return i;
   return -1;
 }
-function readKeyboard(): [number, number] {
+function currentMove(): [number, number] {
+  if (botDir.x !== 0 || botDir.y !== 0) return [botDir.x, botDir.y];
   let x = 0, y = 0;
   if (keys.has('a') || keys.has('arrowleft')) x -= 1;
   if (keys.has('d') || keys.has('arrowright')) x += 1;
@@ -112,53 +154,201 @@ function readKeyboard(): [number, number] {
   if (keys.has('s') || keys.has('arrowdown')) y += 1;
   return [x, y];
 }
-function currentMove(): [number, number] {
-  if (botDir.x !== 0 || botDir.y !== 0) return [botDir.x, botDir.y];
-  return readKeyboard();
-}
 
-// ---------- level up ----------
-function buildOptions(): ItemOption[] {
-  const avail: ItemOption[] = [
-    { id: 'whip', name: 'Fart Whip', desc: 'Upgrade whip +damage', kind: 'weapon', lvl: G.whip.lvl },
-    { id: 'hp', name: 'Donut', desc: 'Restore 25 HP', kind: 'hp', lvl: 0 },
-    { id: 'gold', name: 'Golden Scoop', desc: '+25 Gold', kind: 'gold', lvl: 0 },
-  ];
-  const picks = avail.filter((o) => !(o.id === 'whip' && G.whip.lvl >= 8));
-  const arr = picks.slice();
-  for (let i = arr.length - 1; i > 0; i--) { const j = Math.floor(G.rng() * (i + 1)); [arr[i], arr[j]] = [arr[j], arr[i]]; }
-  return arr.slice(0, 3);
+// ---------- level up (VS rules, simplified) ----------
+function weaponCount(): number { return Object.keys(G.weapons).filter((id) => !WEAPONS[id].evolved).length; }
+function passiveCount(): number { return Object.keys(G.passives).length; }
+function buildOptions(): ItemOpt[] {
+  const opts: ItemOpt[] = [];
+  for (const id of Object.keys(WEAPONS)) {
+    if (WEAPONS[id].evolved) continue;
+    const w = G.weapons[id];
+    if (w) { if (w.lvl < WEAPONS[id].maxLvl) opts.push({ kind: 'weapon', id, name: WEAPONS[id].name, desc: 'Upgrade ' + WEAPONS[id].name, lvl: w.lvl }); }
+    else if (weaponCount() < 6) opts.push({ kind: 'weapon', id, name: WEAPONS[id].name, desc: WEAPONS[id].desc, lvl: 1 });
+  }
+  for (const id of Object.keys(PASSIVES)) {
+    const lvl = G.passives[id] || 0;
+    if (lvl > 0) { if (lvl < PASSIVES[id].maxLvl) opts.push({ kind: 'passive', id, name: PASSIVES[id].name, desc: 'Upgrade ' + PASSIVES[id].name, lvl }); }
+    else if (passiveCount() < 6) opts.push({ kind: 'passive', id, name: PASSIVES[id].name, desc: PASSIVES[id].desc, lvl: 1 });
+  }
+  if (opts.length === 0) {
+    opts.push({ kind: 'hp', id: 'hp', name: 'Donut', desc: 'Restore 25 HP', lvl: 0 });
+    opts.push({ kind: 'gold', id: 'gold', name: 'Golden Scoop', desc: '+50 Gold', lvl: 0 });
+    return opts;
+  }
+  // VS: show 3 options. Guarantee at least one FRESH pick (a weapon/passive the
+  // bot doesn't own yet) so a build can actually diversify — a pure owned-upgrade
+  // pool lets a single weapon snowball and starve the player of new tools.
+  const shuf = (a: ItemOpt[]) => { for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(G.rng() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; };
+  const ownedUp = opts.filter((o) => (o.kind === 'weapon' && G.weapons[o.id]) || (o.kind === 'passive' && G.passives[o.id]));
+  const fresh = opts.filter((o) => !ownedUp.includes(o));
+  const freshWeapons = fresh.filter((o) => o.kind === 'weapon');
+  const freshOther = fresh.filter((o) => o.kind !== 'weapon');
+  let result: ItemOpt[];
+  if (fresh.length >= 2) {
+    // one fresh weapon (if any) + one other fresh + one owned upgrade
+    result = [
+      shuf(freshWeapons)[0] || shuf(freshOther)[0],
+      shuf(fresh)[0],
+      shuf(ownedUp)[0] || shuf(fresh)[1],
+    ];
+  } else if (fresh.length === 1) {
+    result = [fresh[0], shuf(ownedUp)[0], shuf(ownedUp)[1] || shuf(fresh)[0]];
+  } else {
+    result = shuf(ownedUp).slice(0, 3);
+  }
+  // de-dup by id (guard against a single-option pool)
+  const seen = new Set<string>();
+  result = result.filter((o) => { if (seen.has(o.id)) return false; seen.add(o.id); return true; });
+  return result.length ? result : shuf(opts).slice(0, 3);
 }
 function pickOption(i: number): void {
   const o = G.options[i];
   if (!o) return;
-  if (o.id === 'whip' && G.whip.lvl < 8) { G.whip.lvl++; G.whip.dmg = 10 + (G.whip.lvl - 1) * 3; }
-  else if (o.id === 'hp') { G.player.hp = Math.min(PLAYER.maxHp, G.player.hp + 25); }
+  if (o.kind === 'weapon') {
+    if (G.weapons[o.id]) G.weapons[o.id].lvl++;
+    else G.weapons[o.id] = { lvl: 1, cd: 0, ang: G.rng() * 6.28 };
+  } else if (o.kind === 'passive') {
+    G.passives[o.id] = (G.passives[o.id] || 0) + 1;
+    recomputeStats();
+  } else if (o.kind === 'hp') {
+    G.player.hp = Math.min(PLAYER.maxHp, G.player.hp + 25);
+  } else if (o.kind === 'gold') {
+    G.gold += 50;
+  }
   G.mode = 'play';
+  G.player.hp = PLAYER.maxHp; // VS rule: leveling up restores health
   G.player.invuln = Math.max(G.player.invuln, PLAYER.invulnOnLevel);
   G.flashT = 0.25;
 }
 
-// ---------- combat ----------
-function fireWhip(): void {
-  const w = G.whip;
-  w.cd = w.cdMax;
-  G.stats.whipShots++;
-  G.stats.whipFiredAt.push(G.time);
-  const n = Math.min(3, 1 + Math.floor(w.lvl / 3));
-  for (let k = 0; k < n; k++) {
-    const spread = (k - (n - 1) / 2) * 0.14;
-    const a = G.player.face + spread;
-    G.bullets.push({ x: G.player.x, z: G.player.z, vx: Math.cos(a) * 300, vz: Math.sin(a) * 300, life: 0.9, dmg: w.dmg, ang: a });
-  }
-}
-function nearestEnemy(): Enemy | null {
-  let best: Enemy | null = null, bd = 1e9;
+// ---------- combat helpers ----------
+function nearestEnemy(maxD = 1e9): { e: Enemy; d: number } | null {
+  let best: Enemy | null = null, bd = maxD;
   for (const e of G.enemies) {
     const d = Math.hypot(e.x - G.player.x, e.z - G.player.z);
     if (d < bd) { bd = d; best = e; }
   }
-  return best;
+  return best ? { e: best, d: bd } : null;
+}
+function damageEnemy(e: Enemy, dmg: number, srcX: number, srcZ: number): void {
+  e.hp -= dmg; e.hitT = 0.12;
+  G.dmgNums.push({ x: e.x, z: e.z - 6, vy: -22, t: 0.7, txt: String(Math.round(dmg)), crit: false });
+  // knockback, away from the hit source (VS-style; boss resists)
+  const dx = e.x - srcX, dz = e.z - srcZ;
+  const d = Math.hypot(dx, dz) || 1;
+  e.kbx += (dx / d) * 70; e.kbz += (dz / d) * 70;
+  G.stats.kbApplied++;
+  if (e.hp <= 0) {
+    G.kills++;
+    const idx = G.enemies.indexOf(e);
+    if (idx >= 0) G.enemies.splice(idx, 1);
+    G.gems.push({ x: e.x, z: e.z, val: e.xp, vx: (G.rng() - 0.5) * 40, vz: (G.rng() - 0.5) * 40, pulled: false });
+  }
+}
+
+// ---------- weapon firing ----------
+function fireWeapons(): void {
+  const p = G.player;
+  for (const id of Object.keys(G.weapons)) {
+    const w = G.weapons[id];
+    w.cd -= DT;
+    if (id === 'crackerring') {
+      // continuous orbit: a full 2π ring at radius r — hit everything in the band.
+      // Shards are the visual (and the thing that knocks); the band is the damage.
+      const spd = 2.0 + 0.15 * (w.lvl - 1);
+      w.ang += spd * DT;
+      if (w.cd <= 0) {
+        w.cd = wCd('crackerring', w.lvl);
+        G.stats.shots['crackerring'] = (G.stats.shots['crackerring'] || 0) + 1;
+        const r = 34 + 2 * w.lvl;
+        const band = 13; // ring thickness (VS aura)
+        orbitPos = { x: p.x + Math.cos(w.ang) * r, z: p.z + Math.sin(w.ang) * r, r: r + 6 };
+        const dmg = wDmg('crackerring', w.lvl);
+        for (const e of G.enemies) {
+          const d = Math.hypot(e.x - p.x, e.z - p.z);
+          if (Math.abs(d - r) < band + e.radius) damageEnemy(e, dmg, p.x, p.z);
+        }
+        // boss (resists knockback, same as before)
+        if (G.boss) {
+          const d = Math.hypot(G.boss.x - p.x, G.boss.z - p.z);
+          if (Math.abs(d - r) < band + G.boss.radius) hitBoss(dmg, p.x, p.z);
+        }
+      }
+      continue;
+    }
+    if (id === 'puddle') {
+      if (w.cd <= 0) {
+        w.cd = wCd('puddle', w.lvl);
+        G.stats.shots['puddle'] = (G.stats.shots['puddle'] || 0) + 1;
+        const a = G.rng() * Math.PI * 2, d = 20 + G.rng() * 50;
+        G.zones.push({ x: p.x + Math.cos(a) * d, z: p.z + Math.sin(a) * d, r: 30 + 6 * w.lvl, life: 4, tick: 0.5, dmg: wDmg('puddle', w.lvl) });
+      }
+      continue;
+    }
+    if (w.cd > 0) continue;
+    const n = nearestEnemy(240);
+    if (!n) continue;
+    p.face = Math.atan2(n.e.z - p.z, n.e.x - p.x);
+    w.cd = wCd(id, w.lvl);
+    G.stats.shots[id] = (G.stats.shots[id] || 0) + 1;
+    if (id === 'fartwhip') {
+      const count = Math.min(3, 1 + Math.floor(w.lvl / 3));
+      for (let k = 0; k < count; k++) {
+        const a = p.face + (k - (count - 1) / 2) * 0.14;
+        G.bullets.push({ x: p.x, z: p.z, vx: Math.cos(a) * 300, vz: Math.sin(a) * 300, life: 0.9, dmg: wDmg('fartwhip', w.lvl), ang: a, hitR: 3, kind: 'whip' });
+      }
+    } else if (id === 'plopcannon') {
+      G.bullets.push({ x: p.x, z: p.z, vx: Math.cos(p.face) * 170, vz: Math.sin(p.face) * 170, life: 1.6, dmg: wDmg('plopcannon', w.lvl), ang: p.face, hitR: 5, kind: 'plop' });
+    } else if (id === 'superfart') {
+      for (let k = 0; k < 3; k++) {
+        const a = p.face + (k - 1) * 0.22;
+        G.bullets.push({ x: p.x, z: p.z, vx: Math.cos(a) * 340, vz: Math.sin(a) * 340, life: 1.3, dmg: wDmg('superfart', w.lvl), ang: a, hitR: 8, kind: 'superfart' });
+      }
+    }
+  }
+}
+
+// ---------- boss ----------
+const BOSS_T = 180; // 3:00
+function spawnBoss(): void {
+  const hp = 500 + 25 * G.level; // 3-min checkpoint: a threat, not an executioner (M3 director re-scales)
+  const ang = G.rng() * Math.PI * 2;
+  G.boss = {
+    x: G.player.x + Math.cos(ang) * 200, z: G.player.z + Math.sin(ang) * 200,
+    hp, maxHp: hp, speed: 26, dmg: 12, radius: 11, hitT: 0, minionCd: 4, wob: 0,
+  };
+}
+function hitBoss(dmg: number, srcX: number, srcZ: number): void {
+  const b = G.boss;
+  if (!b) return;
+  b.hp -= dmg; b.hitT = 0.1;
+  G.dmgNums.push({ x: b.x, z: b.z - 10, vy: -22, t: 0.7, txt: String(Math.round(dmg)), crit: false });
+  if (b.hp <= 0) {
+    G.boss = null;
+    G.bossKilled++;
+    G.chest = { x: b.x, z: b.z };
+    G.shake = 10; G.flashT = 0.4;
+  }
+}
+
+// ---------- evolution ----------
+function evoReady(): boolean {
+  return (G.weapons.fartwhip?.lvl || 0) >= WEAPONS.fartwhip.maxLvl && (G.passives.quick || 0) >= 1;
+}
+function resolveChest(): void {
+  G.stats.chestTaken++;
+  if (evoReady() && !G.evolved) {
+    delete G.weapons.fartwhip;
+    G.weapons.superfart = { lvl: 1, cd: 0, ang: 0 };
+    G.evolved = true;
+    G.evolutionT = 2.2;
+    G.flashT = 0.5; G.shake = 8;
+  } else {
+    G.gold += 50;
+    G.player.hp = Math.min(PLAYER.maxHp, G.player.hp + 25);
+  }
+  G.chest = null;
 }
 
 // ---------- spawning ----------
@@ -169,11 +359,11 @@ function spawnEnemy(): void {
   let x = p.x + Math.cos(ang) * dist, z = p.z + Math.sin(ang) * dist;
   x = Math.max(8, Math.min(WORLD_W - 8, x));
   z = Math.max(8, Math.min(WORLD_H - 8, z));
-  const b = ENEMY.bubble;
-  const hpScale = 1 + G.time / 90;
-  G.enemies.push({ x, z, hp: b.hp * hpScale, maxHp: b.hp * hpScale, speed: b.speed, dmg: b.dmg, radius: b.radius, xp: b.xp, kind: 'bubble', hitT: 0, wob: G.rng() * 6.28 });
+  const hp = 6 * (1 + G.time / 90);
+  G.enemies.push({ x, z, hp, maxHp: hp, speed: 34, dmg: 8, radius: 5, xp: 1, kind: 'bubble', hitT: 0, wob: G.rng() * 6.28, kbx: 0, kbz: 0 });
 }
 
+// ---------- xp / level ----------
 function gainXp(amt: number): void {
   G.xp += amt;
   checkLevelUp();
@@ -188,47 +378,48 @@ function checkLevelUp(): void {
   }
 }
 
-// ---------- main update (fixed step) ----------
+// ---------- main update ----------
 const DT = 1 / 60;
-const RUN_LEN = 180; // 3:00
+const RUN_LEN = 300; // 5:00 for M2 (full 30:00 director lands in M3)
+let orbitPos: { x: number; z: number; r: number } | null = null;
 
 function update(): void {
   syncKeys();
-  // selection (works in title/dead/win/levelup)
   if (G.mode === 'levelup') {
     const idx = keyIndex('1', '2', '3');
     if (idx >= 0) pickOption(idx);
   } else if (G.mode === 'title' || G.mode === 'dead' || G.mode === 'win') {
     if (justPressed(' ') || justPressed('enter')) startRun(G.seed);
   }
-  if (G.mode !== 'play') return;
+  if (G.mode !== 'play') { if (G.evolutionT > 0) G.evolutionT -= DT; return; }
 
   G.time += DT;
-
   const p = G.player;
+
   let [mx, my] = currentMove();
   const mlen = Math.hypot(mx, my);
   if (mlen > 1) { mx /= mlen; my /= mlen; }
   p.moving = mlen > 0;
+  const spd = PLAYER.speed * G.stats.speedMult;
   if (p.moving) {
-    p.x = clampNum(p.x + mx * PLAYER.speed * DT);
-    p.z = clampNum(p.z + my * PLAYER.speed * DT);
+    p.x = clampNum(p.x + mx * spd * DT);
+    p.z = clampNum(p.z + my * spd * DT);
     p.x = Math.max(PLAYER.radius, Math.min(WORLD_W - PLAYER.radius, p.x));
     p.z = Math.max(PLAYER.radius, Math.min(WORLD_H - PLAYER.radius, p.z));
     p.face = Math.atan2(my, mx);
     p.walkT += DT;
   }
   const tgt = nearestEnemy();
-  if (tgt) p.face = Math.atan2(tgt.z - p.z, tgt.x - p.x);
+  if (tgt) p.face = Math.atan2(tgt.e.z - p.z, tgt.e.x - p.x);
 
   if (p.invuln > 0) p.invuln -= DT;
   if (G.flashT > 0) G.flashT -= DT;
+  if (G.evolutionT > 0) G.evolutionT -= DT;
   if (G.shake > 0) G.shake = Math.max(0, G.shake - DT * 40);
 
-  G.whip.cd -= DT;
-  if (G.whip.cd <= 0 && tgt) fireWhip();
+  fireWeapons();
 
-  // bullets (piercing)
+  // bullets
   for (let i = G.bullets.length - 1; i >= 0; i--) {
     const b = G.bullets[i];
     b.x += b.vx * DT; b.z += b.vz * DT; b.life -= DT;
@@ -236,26 +427,37 @@ function update(): void {
     for (let ei = G.enemies.length - 1; ei >= 0; ei--) {
       const e = G.enemies[ei];
       if (e.hp <= 0) continue;
-      if (Math.hypot(e.x - b.x, e.z - b.z) < e.radius + 3) {
-        e.hp -= b.dmg; e.hitT = 0.12;
-        G.dmgNums.push({ x: e.x, z: e.z - 6, vy: -22, t: 0.7, txt: String(Math.round(b.dmg)), crit: false });
-        if (e.hp <= 0) {
-          G.kills++; G.enemies.splice(ei, 1);
-          G.gems.push({ x: e.x, z: e.z, val: e.xp, vx: (G.rng() - 0.5) * 40, vz: (G.rng() - 0.5) * 40, pulled: false, t: 0 });
-        }
+      if (Math.hypot(e.x - b.x, e.z - b.z) < e.radius + b.hitR) damageEnemy(e, b.dmg, b.x - b.vx * 0.02, b.z - b.vz * 0.02);
+    }
+    if (G.boss && Math.hypot(G.boss.x - b.x, G.boss.z - b.z) < G.boss.radius + b.hitR) hitBoss(b.dmg, b.x - b.vx * 0.02, b.z - b.vz * 0.02);
+  }
+
+  // zones (puddles)
+  for (let i = G.zones.length - 1; i >= 0; i--) {
+    const zn = G.zones[i];
+    zn.life -= DT; zn.tick -= DT;
+    if (zn.life <= 0) { G.zones.splice(i, 1); continue; }
+    if (zn.tick <= 0) {
+      zn.tick = 0.5;
+      for (let ei = G.enemies.length - 1; ei >= 0; ei--) {
+        const e = G.enemies[ei];
+        if (Math.hypot(e.x - zn.x, e.z - zn.z) < zn.r + e.radius) damageEnemy(e, zn.dmg, zn.x, zn.z);
       }
+      if (G.boss && Math.hypot(G.boss.x - zn.x, G.boss.z - zn.z) < zn.r + G.boss.radius) hitBoss(zn.dmg, zn.x, zn.z);
     }
   }
 
-  // enemies chase
+  // enemies
   for (let i = G.enemies.length - 1; i >= 0; i--) {
     const e = G.enemies[i];
     e.wob += DT * 6;
     if (e.hitT > 0) e.hitT -= DT;
     const dx = p.x - e.x, dz = p.z - e.z;
     const d = Math.hypot(dx, dz) || 1;
-    e.x += (dx / d) * e.speed * DT;
-    e.z += (dz / d) * e.speed * DT;
+    e.x += ((dx / d) * e.speed + e.kbx) * DT;
+    e.z += ((dz / d) * e.speed + e.kbz) * DT;
+    const kd = Math.exp(-4 * DT);
+    e.kbx *= kd; e.kbz *= kd;
     if (d < e.radius + PLAYER.radius && p.invuln <= 0) {
       p.hp -= e.dmg; p.invuln = PLAYER.invulnAfterHit;
       G.shake = 6; G.flashT = Math.max(G.flashT, 0.12);
@@ -264,23 +466,45 @@ function update(): void {
     }
   }
 
-  // spawn
+  // boss
+  if (!G.boss && G.time >= BOSS_T && G.bossKilled < 1) spawnBoss();
+  if (G.boss) {
+    const b = G.boss;
+    b.wob += DT * 4;
+    if (b.hitT > 0) b.hitT -= DT;
+    const dx = p.x - b.x, dz = p.z - b.z;
+    const d = Math.hypot(dx, dz) || 1;
+    b.x += (dx / d) * b.speed * DT;
+    b.z += (dz / d) * b.speed * DT;
+    b.minionCd -= DT;
+    if (b.minionCd <= 0 && G.enemies.length < 40) { b.minionCd = 8; spawnEnemy(); }
+    if (d < b.radius + PLAYER.radius && p.invuln <= 0) {
+      p.hp -= b.dmg; p.invuln = PLAYER.invulnAfterHit;
+      G.shake = 10; G.flashT = 0.2;
+      G.dmgNums.push({ x: p.x, z: p.z - 10, vy: -26, t: 0.9, txt: '-' + b.dmg, crit: true });
+      if (p.hp <= 0) { p.hp = 0; G.mode = 'dead'; return; }
+    }
+  }
+
+  // chest pickup
+  if (G.chest && Math.hypot(G.chest.x - p.x, G.chest.z - p.z) < 14) resolveChest();
+
+  // spawn director
   G.spawnCd -= DT;
-  G.spawnInterval = Math.max(0.25, 1.0 - G.time / 240);
+  G.spawnInterval = Math.max(0.25, 1.1 - G.time / 300);
   if (G.spawnCd <= 0) { spawnEnemy(); G.spawnCd = G.spawnInterval; }
   if (G.enemies.length > 260) G.enemies.splice(0, G.enemies.length - 260);
 
-  // gems / magnet
+  // gems
   const magnetR = PLAYER.magnetBase + (G.level - 1) * PLAYER.magnetPerLevel;
   for (let i = G.gems.length - 1; i >= 0; i--) {
     const g = G.gems[i];
-    g.t += DT;
     const dx = p.x - g.x, dz = p.z - g.z;
     const d = Math.hypot(dx, dz) || 1;
     if (d < magnetR) g.pulled = true;
     if (g.pulled) { g.x += (dx / d) * 160 * DT; g.z += (dz / d) * 160 * DT; }
     else { g.x += g.vx * DT; g.z += g.vz * DT; g.vx *= 0.9; g.vz *= 0.9; }
-    if (d < PLAYER.radius + 3) { G.gems.splice(i, 1); G.stats.gems++; gainXp(g.val); }
+    if (d < PLAYER.radius + 3) { G.gems.splice(i, 1); G.stats.gems++; gainXp(g.val * G.stats.xpMult); }
   }
 
   // damage numbers
@@ -293,8 +517,7 @@ function update(): void {
 }
 
 function clampNum(v: number): number { if (Number.isNaN(v)) { G.stats.nan++; return 0; } return v; }
-
-function startRun(seed: number): void { G = mkGame(seed); G.mode = 'play'; botDir = { x: 0, y: 0 }; }
+function startRun(seed: number): void { G = mkGame(seed); G.mode = 'play'; botDir = { x: 0, y: 0 }; orbitPos = null; }
 
 // ---------- rendering ----------
 const canvas = (document.getElementById('c') as HTMLCanvasElement);
@@ -314,16 +537,30 @@ function camY(): number { return Math.max(0, Math.min(WORLD_H - VIEW_H, G.player
 
 function render(t: number): void {
   if (G.mode === 'title') { drawTitle(t); return; }
-  // time-based shake (does NOT consume the game RNG → deterministic logic)
   const sx = G.shake > 0 ? Math.sin(t * 47) * G.shake * 0.5 : 0;
   const sy = G.shake > 0 ? Math.cos(t * 39) * G.shake * 0.5 : 0;
   const cx = camX() + sx, cy = camY() + sy;
   drawFloor(cx, cy);
+  // zones under everything
+  for (const zn of G.zones) {
+    ctx.fillStyle = 'rgba(138,90,43,0.45)';
+    ctx.beginPath(); ctx.arc(zn.x - cx, zn.z - cy, zn.r, 0, 6.283); ctx.fill();
+    ctx.strokeStyle = 'rgba(74,50,32,0.6)'; ctx.stroke();
+  }
   for (const g of G.gems) drawSprite(ctx, SPRITES.gem, Math.round(g.x - cx), Math.round(g.z - cy), Math.floor(t / 0.3) % 2);
-  for (const b of G.bullets) drawSprite(ctx, SPRITES.bolt, Math.round(b.x - cx), Math.round(b.z - cy), 0);
+  if (G.chest) drawSprite(ctx, SPRITES.chest, Math.round(G.chest.x - cx) - 6, Math.round(G.chest.z - cy) - 8, 0);
+  for (const b of G.bullets) {
+    if (b.kind === 'plop') drawSprite(ctx, SPRITES.plop, Math.round(b.x - cx) - 4, Math.round(b.z - cy) - 4, 0);
+    else if (b.kind === 'superfart') drawScaled(ctx, SPRITES.bolt, Math.round(b.x - cx) - 8, Math.round(b.z - cy) - 3, 2, 0);
+    else drawSprite(ctx, SPRITES.bolt, Math.round(b.x - cx), Math.round(b.z - cy), 0);
+  }
   for (const e of G.enemies) {
     const frame = Math.floor(t * 8 + e.wob) % 2;
     drawSprite(ctx, e.hitT > 0 ? SPRITES.bubbleHit : SPRITES.bubble, Math.round(e.x - cx), Math.round(e.z - cy), frame);
+  }
+  if (G.boss) {
+    const frame = Math.floor(t * 6) % 2;
+    drawSprite(ctx, G.boss.hitT > 0 ? SPRITES.bossHit : SPRITES.boss, Math.round(G.boss.x - cx) - 6, Math.round(G.boss.z - cy) - 6, frame);
   }
   {
     const p = G.player;
@@ -331,9 +568,30 @@ function render(t: number): void {
     const blink = p.invuln > 0 && Math.floor(t * 16) % 2 === 0;
     drawSprite(ctx, blink ? SPRITES.croutonHit : SPRITES.crouton, Math.round(p.x - cx), Math.round(p.z - cy), frame);
   }
+  // orbiting cracker: faint full aura ring centered on the PLAYER + the shard marker
+  if (orbitPos) {
+    const p = G.player;
+    const cr = G.weapons.crackerring;
+    if (cr) {
+      const ar = 34 + 2 * cr.lvl;
+      ctx.strokeStyle = 'rgba(255,224,130,0.3)';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(Math.round(p.x - cx), Math.round(p.z - cy), ar, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+    drawSprite(ctx, SPRITES.cracker, Math.round(orbitPos.x - cx) - 4, Math.round(orbitPos.z - cy) - 4, Math.floor(t * 12) % 2);
+  }
   for (const n of G.dmgNums) drawText(ctx, n.txt, Math.round(n.x - cx - 4), Math.round(n.z - cy), n.crit ? 1 : 0);
   if (G.flashT > 0) { ctx.fillStyle = `rgba(255,255,255,${Math.min(0.5, G.flashT * 2)})`; ctx.fillRect(0, 0, VIEW_W, VIEW_H); }
   drawHud(t);
+  if (G.evolutionT > 0) {
+    ctx.fillStyle = 'rgba(18,12,6,0.8)'; ctx.fillRect(0, 0, VIEW_W, VIEW_H);
+    const bounce = Math.round(Math.sin(t * 8) * 2);
+    center('EVOLUTION!', 90 + bounce, 1);
+    center('Fart Whip  +  Quick Hands', 116, 0);
+    center('= SUPER FART', 128, 1);
+  }
 }
 
 function drawFloor(cx: number, cy: number): void {
@@ -367,10 +625,22 @@ function drawHud(t: number): void {
   ctx.fillStyle = '#7a2e2e'; ctx.fillRect(hbx, hby, 84, 7);
   ctx.fillStyle = '#e0563a'; ctx.fillRect(hbx, hby, Math.round(84 * Math.max(0, Math.min(1, G.player.hp / PLAYER.maxHp))), 7);
   drawText(ctx, 'HP', hbx + 2, hby + 1, 0);
+  // weapon levels, small, under the XP bar
+  const wtxt = Object.keys(G.weapons).map((id) => id[0].toUpperCase() + (G.weapons[id].lvl)).join(' ');
+  drawText(ctx, wtxt, 6, 26, 0);
+  // gold
+  drawText(ctx, 'G' + G.gold, VIEW_W - 40, 16, 0);
+  // boss bar
+  if (G.boss) {
+    const bbw = VIEW_W - 60, bbx = 30, bby = 34;
+    ctx.fillStyle = '#1a0f08'; ctx.fillRect(bbx - 1, bby - 1, bbw + 2, 8);
+    ctx.fillStyle = '#5a2e4e'; ctx.fillRect(bbx, bby, bbw, 6);
+    ctx.fillStyle = '#c95aa0'; ctx.fillRect(bbx, bby, Math.round(bbw * Math.max(0, G.boss.hp / G.boss.maxHp)), 6);
+    drawText(ctx, 'THE FIRST WIND', Math.round(VIEW_W / 2 - 36), bby + 8, 1);
+  }
 
-  if (G.mode === 'title') overlay('POOP SURVIVORS', 'move: WASD / arrows', 'press SPACE to drop in', t, false);
-  else if (G.mode === 'dead') overlay('FLUSHED', `lv${G.level}  kills ${G.kills}  ${fmt(G.time)}`, 'press SPACE to retry', t, true);
-  else if (G.mode === 'win') overlay('SOLVED IT', `lv${G.level}  kills ${G.kills}`, 'press SPACE to go again', t, false);
+  if (G.mode === 'dead') overlay('FLUSHED', `lv${G.level}  kills ${G.kills}  ${fmt(G.time)}`, 'press SPACE to retry', t, true);
+  else if (G.mode === 'win') overlay('SOLVED IT', `lv${G.level}  kills ${G.kills}  gold ${G.gold}`, 'press SPACE to go again', t, false);
   else if (G.mode === 'levelup') drawLevelUp();
 }
 function overlay(title: string, sub1: string, sub2: string, t: number, dark: boolean): void {
@@ -383,42 +653,38 @@ function overlay(title: string, sub1: string, sub2: string, t: number, dark: boo
 }
 function drawLevelUp(): void {
   ctx.fillStyle = 'rgba(18,12,6,0.86)'; ctx.fillRect(0, 0, VIEW_W, VIEW_H);
-  center('LEVEL UP!', 16, 1);
+  center('LEVEL UP!', 12, 1);
   G.options.forEach((o, i) => {
-    const y = 40 + i * 44;
-    ctx.fillStyle = '#332616'; ctx.fillRect(18, y, VIEW_W - 36, 38);
-    ctx.strokeStyle = '#c9a24a'; ctx.strokeRect(18.5, y + 0.5, VIEW_W - 37, 37);
-    drawText(ctx, `[${i + 1}] ${o.name}`, 26, y + 6, 1);
-    drawText(ctx, o.desc, 26, y + 18, 0);
-    if (o.kind === 'weapon') drawText(ctx, `LV${o.lvl}/8`, VIEW_W - 64, y + 6, 0);
+    const y = 36 + i * 44;
+    ctx.fillStyle = '#332616'; ctx.fillRect(14, y, VIEW_W - 28, 40);
+    ctx.strokeStyle = '#c9a24a'; ctx.strokeRect(14.5, y + 0.5, VIEW_W - 29, 39);
+    drawText(ctx, `[${i + 1}] ${o.name}`, 22, y + 6, 1);
+    drawText(ctx, o.desc, 22, y + 20, 0);
+    if (o.kind === 'weapon' || o.kind === 'passive') drawText(ctx, `LV${o.lvl}`, VIEW_W - 60, y + 6, 0);
   });
 }
 
 function drawTitle(t: number): void {
-  // bright checkered kitchen floor, full-bleed
   for (let ty = 0; ty < VIEW_H / TILE; ty++) {
     for (let tx = 0; tx < VIEW_W / TILE; tx++) {
       ctx.fillStyle = ((tx + ty) % 2) === 0 ? '#f7ecc9' : '#ecd79c';
       ctx.fillRect(tx * TILE, ty * TILE, TILE, TILE);
     }
   }
-  // the mascot: a big crouton, gently bobbing
   const bob = Math.round(Math.sin(t * 2.2) * 3);
-  drawScaled(ctx, SPRITES.crouton, Math.round(VIEW_W / 2 - 24), 58 + bob, 4, 0);
-  // title with a hard drop-shadow for contrast on the bright floor
+  drawScaled(ctx, SPRITES.crouton, Math.round(VIEW_W / 2 - 24), 54 + bob, 4, 0);
   const bounce = Math.round(Math.sin(t * 2) * 2);
   const title = 'POOP SURVIVORS';
   const tw = title.length * 6;
   const tx = Math.round((VIEW_W - tw) / 2);
-  drawText(ctx, title, tx + 1, 113 + bounce + 1, 0);   // shadow
-  drawText(ctx, title, tx, 112 + bounce, 1);            // main
-  const blink = Math.floor(t * 1.6) % 2 === 0;
-  if (blink) center('press SPACE to drop in', 140, 0);
-  center('move: WASD or arrows', 156, 0);
-  // a couple of bubbles drifting for life
+  drawText(ctx, title, tx + 1, 109 + bounce + 1, 0);
+  drawText(ctx, title, tx, 108 + bounce, 1);
+  if (Math.floor(t * 1.6) % 2 === 0) center('press SPACE to drop in', 136, 0);
+  center('move: WASD or arrows', 152, 0);
+  center('survive the 5:00', 164, 0);
   for (let i = 0; i < 3; i++) {
     const bx = (t * 24 + i * 120) % (VIEW_W + 24) - 12;
-    const by = 18 + i * 10 + Math.round(Math.sin(t * 3 + i) * 4);
+    const by = 16 + i * 10 + Math.round(Math.sin(t * 3 + i) * 4);
     drawSprite(ctx, SPRITES.bubble, Math.round(bx), by, Math.floor(t * 6 + i) % 2);
   }
 }
@@ -447,9 +713,22 @@ const win = window;
     mode: G.mode, time: +G.time.toFixed(3),
     x: +G.player.x.toFixed(2), z: +G.player.z.toFixed(2),
     hp: G.player.hp, level: G.level, xp: +G.xp.toFixed(2), xpNeed: G.xpNeed,
-    enemies: G.enemies.length, gems: G.gems.length, bullets: G.bullets.length,
-    kills: G.kills, whipLvl: G.whip.lvl,
-    stats: { maxLevel: G.stats.maxLevel, levelUps: G.stats.levelUps, gems: G.stats.gems, whipShots: G.stats.whipShots, nan: G.stats.nan },
+    gold: G.gold,
+    options: G.mode === 'levelup' ? G.options.map((o) => ({ kind: o.kind, id: o.id, name: o.name, lvl: o.lvl })) : [],
+    weapons: Object.fromEntries(Object.entries(G.weapons).map(([k, v]) => [k, v.lvl])),
+    passives: { ...G.passives },
+    evolved: G.evolved, boss: G.boss ? { x: +G.boss.x.toFixed(1), z: +G.boss.z.toFixed(1), hp: Math.round(G.boss.hp) } : null,
+    chest: G.chest ? { x: +G.chest.x.toFixed(1), z: +G.chest.z.toFixed(1) } : null,
+    enemies: G.enemies.length, gems: G.gems.length, bullets: G.bullets.length, zones: G.zones.length,
+    kills: G.kills, bossKilled: G.bossKilled,
+    world: { w: WORLD_W, h: WORLD_H },
+    stats: {
+      maxLevel: G.stats.maxLevel, levelUps: G.stats.levelUps, gems: G.stats.gems,
+      nan: G.stats.nan, shots: { ...G.stats.shots }, kbApplied: G.stats.kbApplied,
+      chestTaken: G.stats.chestTaken,
+      dmgMult: +G.stats.dmgMult.toFixed(3), cdMult: +G.stats.cdMult.toFixed(3),
+      speedMult: +G.stats.speedMult.toFixed(3), xpMult: +G.stats.xpMult.toFixed(3),
+    },
   }),
   xpCurve: (lvl: number) => xpToNext(lvl),
   restart: (seed: number) => { startRun(seed); return (win as any).__cap.state(); },
@@ -458,20 +737,41 @@ const win = window;
     if (k === 'xp') G.xp = v;
     if (k === 'level') { G.level = v; G.xpNeed = xpToNext(v); }
     if (k === 'mode') G.mode = v as Mode;
+    if (k === 'time') G.time = v;
+    if (k === 'pos') { G.player.x = v[0]; G.player.z = v[1]; }
+    if (k === 'bossHp' && G.boss) G.boss.hp = v;
   },
   gainXp: (amt: number) => { if (G.mode === 'play') gainXp(amt); return (win as any).__cap.state(); },
   pick: (i: number) => { pickOption(i); return (win as any).__cap.state(); },
   spawn: (n = 1) => { for (let i = 0; i < n; i++) spawnEnemy(); return (win as any).__cap.state(); },
   move: (x: number, y: number) => { botDir = { x, y }; },
+  spawnBoss: () => { G.boss = null; spawnBoss(); return (win as any).__cap.state(); },
+  giveWeapon: (id: string, lvl = 1) => { G.weapons[id] = { lvl, cd: 0, ang: G.rng() * 6.28 }; return (win as any).__cap.state(); },
+  givePassive: (id: string, lvl = 1) => { G.passives[id] = lvl; recomputeStats(); return (win as any).__cap.state(); },
+  evoReady: () => evoReady(),
+  enemiesNear: (r: number) => G.enemies.filter((e) => Math.hypot(e.x - G.player.x, e.z - G.player.z) < r).length,
+  enemies: (n = 8) => {
+    const arr = G.enemies.map((e) => ({ x: e.x, z: e.z, hp: +e.hp.toFixed(1), d: Math.hypot(e.x - G.player.x, e.z - G.player.z), kx: +e.kbx.toFixed(1), kz: +e.kbz.toFixed(1) })).sort((a, b) => a.d - b.d).slice(0, n);
+    return arr;
+  },
+  setEnemyPos: (i: number, x: number, z: number) => {
+    if (G.enemies[i]) { G.enemies[i].x = x; G.enemies[i].z = z; G.enemies[i].kbx = 0; G.enemies[i].kbz = 0; }
+    return (win as any).__cap.state();
+  },
+  setEnemyHp: (i: number, hp: number) => {
+    if (G.enemies[i]) { G.enemies[i].hp = hp; G.enemies[i].maxHp = Math.max(hp, G.enemies[i].maxHp); }
+    return (win as any).__cap.state();
+  },
   nearestGem: () => {
     let best: Gem | null = null, bd = 1e9;
     for (const g of G.gems) { const d = Math.hypot(g.x - G.player.x, g.z - G.player.z); if (d < bd) { bd = d; best = g; } }
     return best ? { x: best.x, z: best.z, d: bd } : null;
   },
-  enemiesNear: (r: number) => G.enemies.filter((e) => Math.hypot(e.x - G.player.x, e.z - G.player.z) < r).length,
-  // determinism probes: stop the loop, then advance exactly one fixed step
+  // determinism probes
   freeze: () => { frozen = true; },
   unfreeze: () => { frozen = false; },
   step: () => { update(); return (win as any).__cap.state(); },
   magnetRadius: () => PLAYER.magnetBase + (G.level - 1) * PLAYER.magnetPerLevel,
+  // orbit weapon: expose the live orbit position for the bot (distance to ring)
+  orbit: () => orbitPos ? { x: orbitPos.x, z: orbitPos.z } : null,
 };
