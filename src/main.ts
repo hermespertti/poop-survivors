@@ -67,17 +67,34 @@ const PASSIVES: Record<string, { name: string; desc: string; maxLvl: number }> =
 function wDmg(id: string, lvl: number): number { return (WEAPONS[id].baseDmg + WEAPONS[id].dmgPerLvl * (lvl - 1)) * G.stats.dmgMult; }
 function wCd(id: string, lvl: number): number { return Math.max(0.15, (WEAPONS[id].baseCd + WEAPONS[id].cdPerLvl * (lvl - 1)) * G.stats.cdMult); }
 
-// ---------- enemies ----------
+// ---------- enemies (M3 roster) ----------
 type Enemy = {
   x: number; z: number; hp: number; maxHp: number; speed: number; dmg: number;
   radius: number; xp: number; kind: string; hitT: number; wob: number;
   kbx: number; kbz: number;
 };
+// enemy archetype data table (per the GDD director script)
+// bubble: chaser. droplet: fast thin. crumb: tanky slow. mop: swarmer (weak,
+// many). stink: slow heavy cloud. sponge: shielded (takes half damage).
+const ENEMY_TYPES: Record<string, {
+  hp: number; speed: number; dmg: number; radius: number; xp: number;
+}> = {
+  bubble:  { hp: 6,  speed: 34, dmg: 8,  radius: 5, xp: 1 },
+  droplet: { hp: 4,  speed: 52, dmg: 6,  radius: 4, xp: 1 },
+  crumb:   { hp: 30, speed: 20, dmg: 12, radius: 6, xp: 3 },
+  mop:     { hp: 3,  speed: 40, dmg: 5,  radius: 4, xp: 1 },
+  stink:   { hp: 60, speed: 16, dmg: 16, radius: 7, xp: 5 },
+  sponge:  { hp: 40, speed: 24, dmg: 10, radius: 5, xp: 4 },
+};
+// spawn-time HP scaling (VS: enemies get tankier over the run)
+function enemyHp(kind: string): number {
+  const base = ENEMY_TYPES[kind].hp;
+  return base * (1 + G.time / 90);
+}
 type Gem = { x: number; z: number; val: number; vx: number; vz: number; pulled: boolean };
 type Bullet = { x: number; z: number; vx: number; vz: number; life: number; dmg: number; ang: number; hitR: number; kind: string };
 type Zone = { x: number; z: number; r: number; life: number; tick: number; dmg: number };
 type DmgNum = { x: number; z: number; vy: number; t: number; txt: string; crit: boolean };
-type Boss = { x: number; z: number; hp: number; maxHp: number; speed: number; dmg: number; radius: number; hitT: number; minionCd: number; wob: number };
 type Mode = 'title' | 'play' | 'levelup' | 'dead' | 'win';
 type WState = { lvl: number; cd: number; ang: number };
 type ItemOpt = { kind: 'weapon' | 'passive' | 'gold' | 'hp'; id: string; name: string; desc: string; lvl: number };
@@ -86,20 +103,24 @@ type Game = {
   seed: number; rng: () => number;
   mode: Mode; time: number;
   player: { x: number; z: number; hp: number; face: number; moving: boolean; invuln: number; walkT: number };
-  enemies: Enemy[]; gems: Gem[]; bullets: Bullet[]; zones: Zone[]; dmgNums: DmgNum[];
+  enemies: Enemy[]; gems: Gem[]; bullets: Bullet[]; zones: Zone[]; dmgNums: DmgNum[]; items: Item[];
   xp: number; level: number; xpNeed: number; gold: number;
   weapons: Record<string, WState>;
   passives: Record<string, number>;
   boss: Boss | null; chest: { x: number; z: number } | null;
+  bossIdx: number;
+  flush: { x: number; z: number; hp: number; maxHp: number; speed: number; dmg: number; radius: number; hitT: number; wob: number } | null;
+  flushResolved: boolean; flushed: boolean;
+  wall: Enemy[];
   options: ItemOpt[];
   flashT: number; shake: number; evolutionT: number; evolved: boolean;
   kills: number; bossKilled: number;
   stats: {
     maxLevel: number; levelUps: number; gems: number; nan: number;
-    shots: Record<string, number>; kbApplied: number; chestTaken: number;
+    shots: Record<string, number>; kbApplied: number; chestTaken: number; itemTaken: number;
     dmgMult: number; cdMult: number; speedMult: number; xpMult: number;
   };
-  spawnCd: number; spawnInterval: number;
+  spawnCd: number; spawnInterval: number; waveIdx: number; itemIdx: number;
 };
 
 let G: Game = mkGame(1);
@@ -108,15 +129,16 @@ function mkGame(seed: number): Game {
   return {
     seed, rng, mode: 'title', time: 0,
     player: { x: WORLD_W / 2, z: WORLD_H / 2, hp: PLAYER.maxHp, face: 0, moving: false, invuln: 0, walkT: 0 },
-    enemies: [], gems: [], bullets: [], zones: [], dmgNums: [],
+    enemies: [], gems: [], bullets: [], zones: [], dmgNums: [], items: [],
     xp: 0, level: 1, xpNeed: xpToNext(1), gold: 0,
     weapons: { fartwhip: { lvl: 1, cd: 0, ang: 0 } },
     passives: {},
-    boss: null, chest: null,
+    boss: null, chest: null, bossIdx: 0,
+    flush: null, flushResolved: false, flushed: false, wall: [],
     options: [], flashT: 0, shake: 0, evolutionT: 0, evolved: false,
     kills: 0, bossKilled: 0,
-    stats: { maxLevel: 1, levelUps: 0, gems: 0, nan: 0, shots: {}, kbApplied: 0, chestTaken: 0, dmgMult: 1, cdMult: 1, speedMult: 1, xpMult: 1 },
-    spawnCd: 1.0, spawnInterval: 1.1,
+    stats: { maxLevel: 1, levelUps: 0, gems: 0, nan: 0, shots: {}, kbApplied: 0, chestTaken: 0, itemTaken: 0, dmgMult: 1, cdMult: 1, speedMult: 1, xpMult: 1 },
+    spawnCd: 1.0, spawnInterval: 1.1, waveIdx: 0, itemIdx: 0,
   };
 }
 
@@ -269,10 +291,19 @@ function fireWeapons(): void {
           const d = Math.hypot(e.x - p.x, e.z - p.z);
           if (Math.abs(d - r) < band + e.radius) damageEnemy(e, dmg, p.x, p.z);
         }
+        for (let wi = G.wall.length - 1; wi >= 0; wi--) {
+          const e = G.wall[wi];
+          const d = Math.hypot(e.x - p.x, e.z - p.z);
+          if (Math.abs(d - r) < band + e.radius) damageWall(e, dmg, p.x, p.z, wi);
+        }
         // boss (resists knockback, same as before)
         if (G.boss) {
           const d = Math.hypot(G.boss.x - p.x, G.boss.z - p.z);
           if (Math.abs(d - r) < band + G.boss.radius) hitBoss(dmg, p.x, p.z);
+        }
+        if (G.flush) {
+          const d = Math.hypot(G.flush.x - p.x, G.flush.z - p.z);
+          if (Math.abs(d - r) < band + G.flush.radius) hitFlush(dmg, p.x, p.z);
         }
       }
       continue;
@@ -309,14 +340,40 @@ function fireWeapons(): void {
   }
 }
 
-// ---------- boss ----------
-const BOSS_T = 180; // 3:00
-function spawnBoss(): void {
-  const hp = 500 + 25 * G.level; // 3-min checkpoint: a threat, not an executioner (M3 director re-scales)
+// ---------- bosses (M3 schedule) ----------
+// 5 bosses on the script + THE FINAL FLUSH at 30:00. Each boss has its own
+// behavior; killing one drops a chest (10:00+ chests are evolution-grade).
+const BOSS_SCHEDULE: Array<{ t: number; name: string; kind: string }> = [
+  { t: 300,   name: 'THE FIRST WIND',      kind: 'wind' },
+  { t: 600,   name: 'COLONEL C',           kind: 'colonel' },
+  { t: 900,   name: 'THE CONSTIPATION',    kind: 'constipation' },
+  { t: 1200,  name: 'THE DIARRHEA EXPRESS', kind: 'express' },
+  { t: 1500,  name: 'MR. SPHINCTER',       kind: 'sphincter' },
+];
+type Boss = {
+  x: number; z: number; hp: number; maxHp: number; speed: number; dmg: number;
+  radius: number; hitT: number; minionCd: number; wob: number;
+  kind: string; name: string; phase2: boolean; chargeCd: number; dashT: number;
+  aimT: number; lockAng: number;
+};
+// boss behavior data per kind
+const BOSS_STATS: Record<string, { hp: number; speed: number; dmg: number; radius: number }> = {
+  wind:         { hp: 500,  speed: 26, dmg: 12, radius: 11 },
+  colonel:      { hp: 1200, speed: 22, dmg: 14, radius: 12 },
+  constipation: { hp: 2000, speed: 14, dmg: 16, radius: 13 },
+  express:      { hp: 1400, speed: 55, dmg: 14, radius: 10 },
+  sphincter:    { hp: 2600, speed: 20, dmg: 18, radius: 13 },
+  flush:        { hp: 4000, speed: 30, dmg: 30, radius: 14 },
+};
+function spawnBoss(kind: string, name: string): void {
+  const st = BOSS_STATS[kind];
   const ang = G.rng() * Math.PI * 2;
+  const hp = st.hp * (1 + G.time / 600); // mild TIME scaling (not level — level rewards slow play)
   G.boss = {
-    x: G.player.x + Math.cos(ang) * 200, z: G.player.z + Math.sin(ang) * 200,
-    hp, maxHp: hp, speed: 26, dmg: 12, radius: 11, hitT: 0, minionCd: 4, wob: 0,
+    x: Math.max(20, Math.min(WORLD_W - 20, G.player.x + Math.cos(ang) * 200)),
+    z: Math.max(20, Math.min(WORLD_H - 20, G.player.z + Math.sin(ang) * 200)),
+    hp, maxHp: hp, speed: st.speed, dmg: st.dmg, radius: st.radius,
+    hitT: 0, minionCd: 4, wob: 0, kind, name, phase2: false, chargeCd: 0, dashT: 0, aimT: 0, lockAng: 0,
   };
 }
 function hitBoss(dmg: number, srcX: number, srcZ: number): void {
@@ -329,6 +386,32 @@ function hitBoss(dmg: number, srcX: number, srcZ: number): void {
     G.bossKilled++;
     G.chest = { x: b.x, z: b.z };
     G.shake = 10; G.flashT = 0.4;
+  }
+}
+// wall units are tanky; killing one leaves a gap (the wall is just an array)
+function damageWall(e: Enemy, dmg: number, srcX: number, srcZ: number, idx: number): void {
+  e.hp -= dmg; e.hitT = 0.12;
+  G.dmgNums.push({ x: e.x, z: e.z - 6, vy: -22, t: 0.7, txt: String(Math.round(dmg)), crit: false });
+  const dx = e.x - srcX, dz = e.z - srcZ;
+  const d = Math.hypot(dx, dz) || 1;
+  e.kbx += (dx / d) * 20; e.kbz += (dz / d) * 20; // wall resists knockback
+  if (e.hp <= 0) {
+    G.wall.splice(idx, 1);
+    G.kills++;
+  }
+}
+// THE FINAL FLUSH: killable → victory + bonus gold; touching you → flushed
+function hitFlush(dmg: number, srcX: number, srcZ: number): void {
+  const f = G.flush;
+  if (!f) return;
+  f.hp -= dmg; f.hitT = 0.1;
+  G.dmgNums.push({ x: f.x, z: f.z - 12, vy: -22, t: 0.7, txt: String(Math.round(dmg)), crit: false });
+  if (f.hp <= 0) {
+    G.flush = null;
+    G.flushResolved = true;
+    G.gold += 500; // bonus gold for killing the Flush
+    G.mode = 'win';
+    G.shake = 12; G.flashT = 0.5;
   }
 }
 
@@ -351,18 +434,89 @@ function resolveChest(): void {
   G.chest = null;
 }
 
-// ---------- spawning ----------
-function spawnEnemy(): void {
+// ---------- spawning (M3 director) ----------
+// The director script is a fixed event timeline (VS rule #5: escalation is a
+// script, not a sim). Enemy types unlock on schedule; density scales on script;
+// wave bursts repeat. spawnEnemy(kind) is the single entry point.
+// script: [time, kind, weight] — weight = share of spawns while active
+const SCRIPT: Array<{ t: number; kind: string; weight: number }> = [
+  { t: 0,     kind: 'bubble',  weight: 1.0 },
+  { t: 60,    kind: 'droplet', weight: 0.5 },
+  { t: 120,   kind: 'crumb',   weight: 0.4 },
+  { t: 420,   kind: 'mop',     weight: 0.6 },
+  { t: 720,   kind: 'stink',   weight: 0.35 },
+  { t: 1020,  kind: 'sponge',  weight: 0.3 },
+];
+// density spikes (30s of extra spawns): first at 12:00, repeats every 2 min
+const SPIKE_T = 720; // 12:00
+const SPIKE_EVERY = 120; // every 2 min after
+// active kinds at time T (all kinds whose unlock time has passed)
+function activeKinds(): string[] {
+  return SCRIPT.filter((s) => G.time >= s.t).map((s) => s.kind);
+}
+// pick a kind by weight among active kinds
+function pickKind(): string {
+  const kinds = activeKinds();
+  let total = 0;
+  for (const k of kinds) total += SCRIPT.find((s) => s.kind === k)!.weight;
+  let r = G.rng() * total;
+  for (const k of kinds) {
+    const w = SCRIPT.find((s) => s.kind === k)!.weight;
+    if (r < w) return k;
+    r -= w;
+  }
+  return kinds[0] || 'bubble';
+}
+function spawnEnemy(kind: string): void {
   const p = G.player;
   const ang = G.rng() * Math.PI * 2;
   const dist = Math.max(VIEW_W, VIEW_H) / 2 + 40 + G.rng() * 60;
   let x = p.x + Math.cos(ang) * dist, z = p.z + Math.sin(ang) * dist;
   x = Math.max(8, Math.min(WORLD_W - 8, x));
   z = Math.max(8, Math.min(WORLD_H - 8, z));
-  const hp = 6 * (1 + G.time / 90);
-  G.enemies.push({ x, z, hp, maxHp: hp, speed: 34, dmg: 8, radius: 5, xp: 1, kind: 'bubble', hitT: 0, wob: G.rng() * 6.28, kbx: 0, kbz: 0 });
+  const t = ENEMY_TYPES[kind];
+  const hp = enemyHp(kind);
+  G.enemies.push({ x, z, hp, maxHp: hp, speed: t.speed, dmg: t.dmg, radius: t.radius, xp: t.xp, kind, hitT: 0, wob: G.rng() * 6.28, kbx: 0, kbz: 0 });
+}
+// wave burst: ring of N enemies around the player (the "swarm burst")
+function spawnWave(n: number, kind?: string): void {
+  const k = kind || pickKind();
+  for (let i = 0; i < n; i++) {
+    const ang = (i / n) * Math.PI * 2;
+    const dist = Math.max(VIEW_W, VIEW_H) / 2 + 20 + G.rng() * 20;
+    const x = Math.max(8, Math.min(WORLD_W - 8, G.player.x + Math.cos(ang) * dist));
+    const z = Math.max(8, Math.min(WORLD_H - 8, G.player.z + Math.sin(ang) * dist));
+    const t = ENEMY_TYPES[k];
+    const hp = enemyHp(k);
+    G.enemies.push({ x, z, hp, maxHp: hp, speed: t.speed, dmg: t.dmg, radius: t.radius, xp: t.xp, kind: k, hitT: 0, wob: G.rng() * 6.28, kbx: 0, kbz: 0 });
+  }
+}
+// THE SPASM WALL (15:00, with The Constipation): a slow ring of tanky crumb
+// enemies closing around the player. You must break out — kill a gap and dash.
+function spawnSpasmWall(): void {
+  const n = 16;
+  const st = ENEMY_TYPES.crumb;
+  const ringR = Math.max(VIEW_W, VIEW_H) / 2 + 30;
+  for (let i = 0; i < n; i++) {
+    const ang = (i / n) * Math.PI * 2;
+    const x = Math.max(8, Math.min(WORLD_W - 8, G.player.x + Math.cos(ang) * ringR));
+    const z = Math.max(8, Math.min(WORLD_H - 8, G.player.z + Math.sin(ang) * ringR));
+    const hp = st.hp * 3; // tanky wall units
+    G.wall.push({ x, z, hp, maxHp: hp, speed: 12, dmg: 14, radius: 6, xp: 2, kind: 'crumb', hitT: 0, wob: G.rng() * 6.28, kbx: 0, kbz: 0 });
+  }
 }
 
+// stage items (M3): gold bags + donuts drop on a schedule, walk over to collect
+type Item = { x: number; z: number; kind: 'gold' | 'heal' };
+const ITEM_T = 150; // first item at 2:30, every 2.5 min after
+function spawnItem(): void {
+  const p = G.player;
+  const ang = G.rng() * Math.PI * 2;
+  const dist = 60 + G.rng() * 120;
+  const x = Math.max(20, Math.min(WORLD_W - 20, p.x + Math.cos(ang) * dist));
+  const z = Math.max(20, Math.min(WORLD_H - 20, p.z + Math.sin(ang) * dist));
+  G.items.push({ x, z, kind: G.rng() < 0.7 ? 'gold' : 'heal' });
+}
 // ---------- xp / level ----------
 function gainXp(amt: number): void {
   G.xp += amt;
@@ -380,7 +534,7 @@ function checkLevelUp(): void {
 
 // ---------- main update ----------
 const DT = 1 / 60;
-const RUN_LEN = 300; // 5:00 for M2 (full 30:00 director lands in M3)
+const RUN_LEN = 1800; // 30:00 — the full director run (M3)
 let orbitPos: { x: number; z: number; r: number } | null = null;
 
 function update(): void {
@@ -429,7 +583,12 @@ function update(): void {
       if (e.hp <= 0) continue;
       if (Math.hypot(e.x - b.x, e.z - b.z) < e.radius + b.hitR) damageEnemy(e, b.dmg, b.x - b.vx * 0.02, b.z - b.vz * 0.02);
     }
+    for (let wi = G.wall.length - 1; wi >= 0; wi--) {
+      const e = G.wall[wi];
+      if (Math.hypot(e.x - b.x, e.z - b.z) < e.radius + b.hitR) damageWall(e, b.dmg, b.x - b.vx * 0.02, b.z - b.vz * 0.02, wi);
+    }
     if (G.boss && Math.hypot(G.boss.x - b.x, G.boss.z - b.z) < G.boss.radius + b.hitR) hitBoss(b.dmg, b.x - b.vx * 0.02, b.z - b.vz * 0.02);
+    if (G.flush && Math.hypot(G.flush.x - b.x, G.flush.z - b.z) < G.flush.radius + b.hitR) hitFlush(b.dmg, b.x - b.vx * 0.02, b.z - b.vz * 0.02);
   }
 
   // zones (puddles)
@@ -443,7 +602,12 @@ function update(): void {
         const e = G.enemies[ei];
         if (Math.hypot(e.x - zn.x, e.z - zn.z) < zn.r + e.radius) damageEnemy(e, zn.dmg, zn.x, zn.z);
       }
+      for (let wi = G.wall.length - 1; wi >= 0; wi--) {
+        const e = G.wall[wi];
+        if (Math.hypot(e.x - zn.x, e.z - zn.z) < zn.r + e.radius) damageWall(e, zn.dmg, zn.x, zn.z, wi);
+      }
       if (G.boss && Math.hypot(G.boss.x - zn.x, G.boss.z - zn.z) < zn.r + G.boss.radius) hitBoss(zn.dmg, zn.x, zn.z);
+      if (G.flush && Math.hypot(G.flush.x - zn.x, G.flush.z - zn.z) < zn.r + G.flush.radius) hitFlush(zn.dmg, zn.x, zn.z);
     }
   }
 
@@ -466,18 +630,56 @@ function update(): void {
     }
   }
 
-  // boss
-  if (!G.boss && G.time >= BOSS_T && G.bossKilled < 1) spawnBoss();
+  // boss schedule (M3): spawn the next scheduled boss when its time arrives
+  if (!G.boss && G.bossIdx < BOSS_SCHEDULE.length && G.time >= BOSS_SCHEDULE[G.bossIdx].t) {
+    const ev = BOSS_SCHEDULE[G.bossIdx];
+    spawnBoss(ev.kind, ev.name);
+    G.bossIdx++;
+    if (ev.kind === 'constipation') spawnSpasmWall(); // 15:00: the wall closes in
+  }
   if (G.boss) {
     const b = G.boss;
     b.wob += DT * 4;
     if (b.hitT > 0) b.hitT -= DT;
     const dx = p.x - b.x, dz = p.z - b.z;
     const d = Math.hypot(dx, dz) || 1;
-    b.x += (dx / d) * b.speed * DT;
-    b.z += (dz / d) * b.speed * DT;
+    // per-kind behavior
+    if (b.kind === 'express') {
+      // The Diarrhea Express: telegraphed charges — pause 0.6s (aim), then
+      // dash 1.0s in a LOCKED direction (can't turn mid-dash → dodgeable)
+      b.chargeCd -= DT;
+      if (b.chargeCd <= 0) { b.chargeCd = 3; b.dashT = 1.2; b.aimT = 0.6; }
+      if (b.aimT > 0) {
+        // aim: hold position (telegraph), face the player
+        b.aimT -= DT;
+        b.lockAng = Math.atan2(p.z - b.z, p.x - b.x);
+      } else if (b.dashT > 0) {
+        b.dashT -= DT;
+        b.x += Math.cos(b.lockAng) * b.speed * 2.4 * DT;
+        b.z += Math.sin(b.lockAng) * b.speed * 2.4 * DT;
+      } else {
+        b.x += (dx / d) * b.speed * 0.3 * DT;
+        b.z += (dz / d) * b.speed * 0.3 * DT;
+      }
+    } else if (b.kind === 'sphincter') {
+      // Mr. Sphincter: phase 2 at 50% HP — clamps down (speed burst) + shockwaves
+      if (!b.phase2 && b.hp < b.maxHp * 0.5) { b.phase2 = true; G.shake = 12; G.flashT = 0.4; }
+      const spd = b.phase2 ? b.speed * 1.6 : b.speed;
+      b.x += (dx / d) * spd * DT; b.z += (dz / d) * spd * DT;
+      if (b.phase2 && b.chargeCd <= 0) {
+        b.chargeCd = 2.5;
+        // shockwave: ring of damage zones around the boss
+        for (let k = 0; k < 6; k++) {
+          const a = (k / 6) * Math.PI * 2;
+          G.zones.push({ x: b.x + Math.cos(a) * 30, z: b.z + Math.sin(a) * 30, r: 24, life: 1.5, tick: 0.5, dmg: 10 });
+        }
+      }
+    } else {
+      b.x += (dx / d) * b.speed * DT;
+      b.z += (dz / d) * b.speed * DT;
+    }
     b.minionCd -= DT;
-    if (b.minionCd <= 0 && G.enemies.length < 40) { b.minionCd = 8; spawnEnemy(); }
+    if (b.minionCd <= 0 && G.enemies.length < 40) { b.minionCd = 8; spawnEnemy(pickKind()); }
     if (d < b.radius + PLAYER.radius && p.invuln <= 0) {
       p.hp -= b.dmg; p.invuln = PLAYER.invulnAfterHit;
       G.shake = 10; G.flashT = 0.2;
@@ -485,15 +687,78 @@ function update(): void {
       if (p.hp <= 0) { p.hp = 0; G.mode = 'dead'; return; }
     }
   }
+  // THE FINAL FLUSH (30:00): spawns at RUN_LEN; killable → victory+gold, touch → flushed
+  if (!G.flush && G.time >= RUN_LEN && !G.flushResolved) {
+    const st = BOSS_STATS.flush;
+    G.flush = {
+      x: Math.max(20, Math.min(WORLD_W - 20, G.player.x + Math.cos(0) * 240)),
+      z: Math.max(20, Math.min(WORLD_H - 20, G.player.z + Math.sin(0) * 240)),
+      hp: st.hp, maxHp: st.hp, speed: st.speed, dmg: st.dmg, radius: st.radius, hitT: 0, wob: 0,
+    };
+    G.shake = 14; G.flashT = 0.6;
+  }
+  if (G.flush) {
+    const f = G.flush;
+    if (f.hitT > 0) f.hitT -= DT;
+    const dx = p.x - f.x, dz = p.z - f.z;
+    const d = Math.hypot(dx, dz) || 1;
+    f.x += (dx / d) * f.speed * DT;
+    f.z += (dz / d) * f.speed * DT;
+    if (d < f.radius + PLAYER.radius) {
+      // touched → flushed ending
+      G.flushResolved = true;
+      G.mode = 'dead'; G.flushed = true;
+      return;
+    }
+  }
+  // Spasm Wall update: the slow ring of tanky enemies closing around the player
+  if (G.wall.length > 0) {
+    for (let i = G.wall.length - 1; i >= 0; i--) {
+      const e = G.wall[i];
+      const dx = p.x - e.x, dz = p.z - e.z;
+      const d = Math.hypot(dx, dz) || 1;
+      e.x += (dx / d) * e.speed * DT;
+      e.z += (dz / d) * e.speed * DT;
+      if (d < e.radius + PLAYER.radius && p.invuln <= 0) {
+        p.hp -= e.dmg; p.invuln = PLAYER.invulnAfterHit;
+        G.shake = 6;
+        if (p.hp <= 0) { p.hp = 0; G.mode = 'dead'; return; }
+      }
+    }
+  }
 
   // chest pickup
   if (G.chest && Math.hypot(G.chest.x - p.x, G.chest.z - p.z) < 14) resolveChest();
+  // stage items pickup
+  for (let i = G.items.length - 1; i >= 0; i--) {
+    const it = G.items[i];
+    if (Math.hypot(it.x - p.x, it.z - p.z) < PLAYER.radius + 8) {
+      if (it.kind === 'gold') { G.gold += 30; }
+      else { G.player.hp = Math.min(PLAYER.maxHp, G.player.hp + 30); }
+      G.items.splice(i, 1);
+      G.stats.itemTaken++;
+      G.flashT = Math.max(G.flashT, 0.15);
+    }
+  }
 
-  // spawn director
+  // spawn director (M3): script density + wave bursts + spikes
   G.spawnCd -= DT;
   G.spawnInterval = Math.max(0.25, 1.1 - G.time / 300);
-  if (G.spawnCd <= 0) { spawnEnemy(); G.spawnCd = G.spawnInterval; }
+  if (G.spawnCd <= 0) { spawnEnemy(pickKind()); G.spawnCd = G.spawnInterval; }
+  // wave bursts: absolute schedule — 1:00, then every 2 min, size grows
+  const waveNext = Math.floor((G.time - 60) / 120) + 1;
+  if (G.time >= 60 && G.waveIdx < waveNext) {
+    G.waveIdx = waveNext;
+    const size = 8 + Math.floor(G.time / 60) * 2;
+    spawnWave(Math.min(30, size));
+  }
+  // density spike: 30s of doubled spawn rate (first at 12:00, every 2 min after)
+  const spikeActive = G.time >= SPIKE_T && ((G.time - SPIKE_T) % SPIKE_EVERY) < 30;
+  if (spikeActive && G.spawnCd > 0.25) { G.spawnCd = 0.25; }
   if (G.enemies.length > 260) G.enemies.splice(0, G.enemies.length - 260);
+  // stage items: absolute schedule — 2:30, then every 2.5 min
+  const itemNext = Math.floor((G.time - 150) / 150) + 1; // index of next item slot
+  if (G.time >= 150 && G.itemIdx < itemNext) { G.itemIdx = itemNext; spawnItem(); }
 
   // gems
   const magnetR = PLAYER.magnetBase + (G.level - 1) * PLAYER.magnetPerLevel;
@@ -518,7 +783,6 @@ function update(): void {
 
 function clampNum(v: number): number { if (Number.isNaN(v)) { G.stats.nan++; return 0; } return v; }
 function startRun(seed: number): void { G = mkGame(seed); G.mode = 'play'; botDir = { x: 0, y: 0 }; orbitPos = null; }
-
 // ---------- rendering ----------
 const canvas = (document.getElementById('c') as HTMLCanvasElement);
 const ctx = canvas.getContext('2d')!;
@@ -535,6 +799,31 @@ fitCanvas();
 function camX(): number { return Math.max(0, Math.min(WORLD_W - VIEW_W, G.player.x - VIEW_W / 2)); }
 function camY(): number { return Math.max(0, Math.min(WORLD_H - VIEW_H, G.player.z - VIEW_H / 2)); }
 
+// sprite pickers for the M3 roster
+const ENEMY_SPR: Record<string, { spr: string; hit: string }> = {
+  bubble: { spr: 'bubble', hit: 'bubbleHit' },
+  droplet: { spr: 'droplet', hit: 'droplet' }, // single frame — no hit variant authored
+  crumb: { spr: 'crumb', hit: 'crumbHit' },
+  mop: { spr: 'mop', hit: 'mopHit' },
+  stink: { spr: 'stink', hit: 'stinkHit' },
+  sponge: { spr: 'sponge', hit: 'spongeHit' },
+};
+function enemySprite(kind: string, hit: boolean): any {
+  const e = ENEMY_SPR[kind] || ENEMY_SPR.bubble;
+  return SPRITES[hit ? e.hit : e.spr];
+}
+const BOSS_SPR: Record<string, { spr: string; hit: string }> = {
+  wind: { spr: 'boss', hit: 'bossHit' },
+  colonel: { spr: 'colonel', hit: 'colonelHit' },
+  constipation: { spr: 'constipation', hit: 'constipationHit' },
+  express: { spr: 'express', hit: 'expressHit' },
+  sphincter: { spr: 'sphincter', hit: 'sphincterHit' },
+};
+function bossSprite(kind: string): { spr: any; hit: any } {
+  const e = BOSS_SPR[kind] || BOSS_SPR.wind;
+  return { spr: SPRITES[e.spr], hit: SPRITES[e.hit] };
+}
+
 function render(t: number): void {
   if (G.mode === 'title') { drawTitle(t); return; }
   const sx = G.shake > 0 ? Math.sin(t * 47) * G.shake * 0.5 : 0;
@@ -548,6 +837,9 @@ function render(t: number): void {
     ctx.strokeStyle = 'rgba(74,50,32,0.6)'; ctx.stroke();
   }
   for (const g of G.gems) drawSprite(ctx, SPRITES.gem, Math.round(g.x - cx), Math.round(g.z - cy), Math.floor(t / 0.3) % 2);
+  for (const it of G.items) {
+    drawSprite(ctx, it.kind === 'gold' ? SPRITES.goldbag : SPRITES.donut, Math.round(it.x - cx) - 5, Math.round(it.z - cy) - 5, 0);
+  }
   if (G.chest) drawSprite(ctx, SPRITES.chest, Math.round(G.chest.x - cx) - 6, Math.round(G.chest.z - cy) - 8, 0);
   for (const b of G.bullets) {
     if (b.kind === 'plop') drawSprite(ctx, SPRITES.plop, Math.round(b.x - cx) - 4, Math.round(b.z - cy) - 4, 0);
@@ -556,11 +848,22 @@ function render(t: number): void {
   }
   for (const e of G.enemies) {
     const frame = Math.floor(t * 8 + e.wob) % 2;
-    drawSprite(ctx, e.hitT > 0 ? SPRITES.bubbleHit : SPRITES.bubble, Math.round(e.x - cx), Math.round(e.z - cy), frame);
+    const spr = enemySprite(e.kind, false);
+    const hitSpr = enemySprite(e.kind, true);
+    drawSprite(ctx, e.hitT > 0 ? hitSpr : spr, Math.round(e.x - cx), Math.round(e.z - cy), frame);
+  }
+  for (const e of G.wall) {
+    const frame = Math.floor(t * 4 + e.wob) % 2;
+    drawSprite(ctx, e.hitT > 0 ? SPRITES.crumbHit : SPRITES.crumb, Math.round(e.x - cx) - 1, Math.round(e.z - cy) - 1, frame);
   }
   if (G.boss) {
     const frame = Math.floor(t * 6) % 2;
-    drawSprite(ctx, G.boss.hitT > 0 ? SPRITES.bossHit : SPRITES.boss, Math.round(G.boss.x - cx) - 6, Math.round(G.boss.z - cy) - 6, frame);
+    const { spr, hit } = bossSprite(G.boss.kind);
+    drawSprite(ctx, G.boss.hitT > 0 ? hit : spr, Math.round(G.boss.x - cx) - 7, Math.round(G.boss.z - cy) - 7, frame);
+  }
+  if (G.flush) {
+    const frame = Math.floor(t * 5) % 2;
+    drawSprite(ctx, G.flush.hitT > 0 ? SPRITES.flushHit : SPRITES.flush, Math.round(G.flush.x - cx) - 8, Math.round(G.flush.z - cy) - 8, frame);
   }
   {
     const p = G.player;
@@ -630,17 +933,25 @@ function drawHud(t: number): void {
   drawText(ctx, wtxt, 6, 26, 0);
   // gold
   drawText(ctx, 'G' + G.gold, VIEW_W - 40, 16, 0);
-  // boss bar
+  // boss bar (per-boss name)
   if (G.boss) {
     const bbw = VIEW_W - 60, bbx = 30, bby = 34;
     ctx.fillStyle = '#1a0f08'; ctx.fillRect(bbx - 1, bby - 1, bbw + 2, 8);
     ctx.fillStyle = '#5a2e4e'; ctx.fillRect(bbx, bby, bbw, 6);
     ctx.fillStyle = '#c95aa0'; ctx.fillRect(bbx, bby, Math.round(bbw * Math.max(0, G.boss.hp / G.boss.maxHp)), 6);
-    drawText(ctx, 'THE FIRST WIND', Math.round(VIEW_W / 2 - 36), bby + 8, 1);
+    const nm = G.boss.name;
+    drawText(ctx, nm, Math.round((VIEW_W - nm.length * 6) / 2), bby + 8, 1);
+  }
+  // FINAL FLUSH warning banner
+  if (G.flush) {
+    const blink = Math.floor(t * 3) % 2 === 0;
+    if (blink) center('THE FINAL FLUSH!', 50, 1);
+  } else if (G.time > RUN_LEN - 30 && !G.flushResolved) {
+    center('THE FINAL FLUSH APPROACHES...', 50, 0);
   }
 
-  if (G.mode === 'dead') overlay('FLUSHED', `lv${G.level}  kills ${G.kills}  ${fmt(G.time)}`, 'press SPACE to retry', t, true);
-  else if (G.mode === 'win') overlay('SOLVED IT', `lv${G.level}  kills ${G.kills}  gold ${G.gold}`, 'press SPACE to go again', t, false);
+  if (G.mode === 'dead') overlay(G.flushed ? 'FLUSHED' : 'SOUPED', `lv${G.level}  kills ${G.kills}  ${fmt(G.time)}`, 'press SPACE to retry', t, true);
+  else if (G.mode === 'win') overlay('KITCHEN CLEARED', `lv${G.level}  kills ${G.kills}  gold ${G.gold}`, 'press SPACE to go again', t, false);
   else if (G.mode === 'levelup') drawLevelUp();
 }
 function overlay(title: string, sub1: string, sub2: string, t: number, dark: boolean): void {
@@ -681,7 +992,7 @@ function drawTitle(t: number): void {
   drawText(ctx, title, tx, 108 + bounce, 1);
   if (Math.floor(t * 1.6) % 2 === 0) center('press SPACE to drop in', 136, 0);
   center('move: WASD or arrows', 152, 0);
-  center('survive the 5:00', 164, 0);
+  center('survive the 30:00', 164, 0);
   for (let i = 0; i < 3; i++) {
     const bx = (t * 24 + i * 120) % (VIEW_W + 24) - 12;
     const by = 16 + i * 10 + Math.round(Math.sin(t * 3 + i) * 4);
@@ -717,15 +1028,19 @@ const win = window;
     options: G.mode === 'levelup' ? G.options.map((o) => ({ kind: o.kind, id: o.id, name: o.name, lvl: o.lvl })) : [],
     weapons: Object.fromEntries(Object.entries(G.weapons).map(([k, v]) => [k, v.lvl])),
     passives: { ...G.passives },
-    evolved: G.evolved, boss: G.boss ? { x: +G.boss.x.toFixed(1), z: +G.boss.z.toFixed(1), hp: Math.round(G.boss.hp) } : null,
+    evolved: G.evolved, boss: G.boss ? { x: +G.boss.x.toFixed(1), z: +G.boss.z.toFixed(1), hp: Math.round(G.boss.hp), name: G.boss.name, kind: G.boss.kind, phase2: G.boss.phase2 } : null,
     chest: G.chest ? { x: +G.chest.x.toFixed(1), z: +G.chest.z.toFixed(1) } : null,
+    flush: G.flush ? { hp: Math.round(G.flush.hp), maxHp: G.flush.maxHp, x: +G.flush.x.toFixed(1), z: +G.flush.z.toFixed(1) } : null,
+    flushResolved: G.flushResolved, flushed: G.flushed,
+    bossIdx: G.bossIdx,
+    wall: G.wall.length, items: G.items.length,
     enemies: G.enemies.length, gems: G.gems.length, bullets: G.bullets.length, zones: G.zones.length,
     kills: G.kills, bossKilled: G.bossKilled,
     world: { w: WORLD_W, h: WORLD_H },
     stats: {
       maxLevel: G.stats.maxLevel, levelUps: G.stats.levelUps, gems: G.stats.gems,
       nan: G.stats.nan, shots: { ...G.stats.shots }, kbApplied: G.stats.kbApplied,
-      chestTaken: G.stats.chestTaken,
+      chestTaken: G.stats.chestTaken, itemTaken: G.stats.itemTaken,
       dmgMult: +G.stats.dmgMult.toFixed(3), cdMult: +G.stats.cdMult.toFixed(3),
       speedMult: +G.stats.speedMult.toFixed(3), xpMult: +G.stats.xpMult.toFixed(3),
     },
@@ -740,12 +1055,33 @@ const win = window;
     if (k === 'time') G.time = v;
     if (k === 'pos') { G.player.x = v[0]; G.player.z = v[1]; }
     if (k === 'bossHp' && G.boss) G.boss.hp = v;
+    if (k === 'bossIdx') G.bossIdx = v;
+    if (k === 'flushResolved') G.flushResolved = v;
   },
   gainXp: (amt: number) => { if (G.mode === 'play') gainXp(amt); return (win as any).__cap.state(); },
   pick: (i: number) => { pickOption(i); return (win as any).__cap.state(); },
-  spawn: (n = 1) => { for (let i = 0; i < n; i++) spawnEnemy(); return (win as any).__cap.state(); },
+  spawn: (n = 1, kind?: string) => { for (let i = 0; i < n; i++) spawnEnemy(kind || pickKind()); return (win as any).__cap.state(); },
   move: (x: number, y: number) => { botDir = { x, y }; },
-  spawnBoss: () => { G.boss = null; spawnBoss(); return (win as any).__cap.state(); },
+  spawnBoss: (kind?: string) => {
+    G.boss = null;
+    if (kind) { const ev = BOSS_SCHEDULE.find((e) => e.kind === kind) || BOSS_SCHEDULE[0]; spawnBoss(ev.kind, ev.name); }
+    else spawnBoss('wind', 'THE FIRST WIND');
+    return (win as any).__cap.state();
+  },
+  spawnWall: () => { spawnSpasmWall(); return (win as any).__cap.state(); },
+  spawnFlush: () => {
+    const st = BOSS_STATS.flush;
+    G.flush = { x: Math.max(20, Math.min(WORLD_W - 20, G.player.x + 240)), z: Math.max(20, Math.min(WORLD_H - 20, G.player.z)), hp: st.hp, maxHp: st.hp, speed: st.speed, dmg: st.dmg, radius: st.radius, hitT: 0, wob: 0 };
+    return (win as any).__cap.state();
+  },
+  spawnItem: (kind?: string) => { spawnItem(); if (kind && G.items.length) G.items[G.items.length - 1].kind = (kind as 'gold' | 'heal'); return (win as any).__cap.state(); },
+  setFlushHp: (hp: number) => { if (G.flush) { G.flush.hp = hp; G.flush.maxHp = Math.max(G.flush.maxHp, hp); } return (win as any).__cap.state(); },
+  setWallHp: (i: number, hp: number) => { if (G.wall[i]) { G.wall[i].hp = hp; G.wall[i].maxHp = Math.max(G.wall[i].maxHp, hp); } return (win as any).__cap.state(); },
+  wallList: () => G.wall.map((e) => ({ x: e.x, z: e.z, hp: +e.hp.toFixed(1), d: Math.hypot(e.x - G.player.x, e.z - G.player.z) })),
+  itemList: () => G.items.map((it) => ({ x: it.x, z: it.z, kind: it.kind })),
+  lastKinds: () => G.enemies.slice(-30).map((e) => e.kind),
+  clearEnemies: () => { G.enemies.length = 0; return (win as any).__cap.state(); },
+  bossSchedule: () => BOSS_SCHEDULE.map((e) => ({ t: e.t, name: e.name, kind: e.kind })),
   giveWeapon: (id: string, lvl = 1) => { G.weapons[id] = { lvl, cd: 0, ang: G.rng() * 6.28 }; return (win as any).__cap.state(); },
   givePassive: (id: string, lvl = 1) => { G.passives[id] = lvl; recomputeStats(); return (win as any).__cap.state(); },
   evoReady: () => evoReady(),

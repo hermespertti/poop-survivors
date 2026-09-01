@@ -224,9 +224,399 @@ const chest = mk(12, 8, [
   ],
 ]);
 
+// ---------- M3 enemy roster (6 types) — all reuse the 16-color palette ----------
+// 1. bubble (12x12, above) — the chaser from M1.
+// 2. droplet (10x10) — fast, thin, blue-white droplet with a tail.
+const droplet = mk(10, 10, [
+  [
+    '......44..',
+    '.....4bb4.',
+    '....4baab4',
+    '...4ba55ab',
+    '..4ba55a5b',
+    '.4bbbaaab4',
+    '.4b4bbbbb4',
+    '..4..4bb4.',
+    '.....4....',
+    '..........',
+  ],
+]);
+
+// 3. crumb (12x12) — tanky brown crumb blob, slow, 2 frames
+const crumbFrames: string[][] = [
+  [
+    '...444444...',
+    '.4dddddddd4.',
+    '.4dd33dd33d4',
+    '.4dd3ddd33d4',
+    '.4dd33dd33d4',
+    '.4dd33dd33d4',
+    '.4dd33dd33d4',
+    '.4dd33dd33d4',
+    '.4dddddddd4.',
+    '...444444...',
+    '............',
+    '............',
+  ],
+  [
+    '...444444...',
+    '.4dddddddd4.',
+    '.4dd33dd33d4',
+    '.4dd3ddd33d4',
+    '.4dd33dd33d4',
+    '.4dd33dd33d4',
+    '.4dd33dd33d4',
+    '.4dd33dd33d4',
+    '.4dddddddd4.',
+    '...444444...',
+    '..44.....44.',
+    '............',
+  ],
+];
+const crumb = mk(12, 12, crumbFrames);
+const crumbHit = mk(12, 12, crumbFrames.map((f) => f.map((row) =>
+  row.split('').map((c) => (c === 'd' ? '5' : c === '3' ? '5' : c === '4' ? '5' : c)).join(''))));
+
+// 4. mop (12x12) — swarmer: little mop head on a stick, 2 frames
+const mopFrames: string[][] = [
+  [
+    '...444444...',
+    '.4dd4dd4d44.',
+    '.4d4dd44d44.',
+    '.4dd4dd4d44.',
+    '.4d44d44d44.',
+    '.4d44d4d44..',
+    '...444444...',
+    '.....44.....',
+    '....4d4.....',
+    '....4d4.....',
+    '.....4......',
+    '............',
+  ],
+  [
+    '...444444...',
+    '.4dd4dd4d44.',
+    '.4d4dd44d44.',
+    '.4dd4dd4d44.',
+    '.4d44d44d44.',
+    '.4d44d4d44..',
+    '...444444...',
+    '.....44.....',
+    '....4d4.....',
+    '....44d4....',
+    '....4d......',
+    '............',
+  ],
+];
+const mop = mk(12, 12, mopFrames);
+const mopHit = mk(12, 12, mopFrames.map((f) => f.map((row) =>
+  row.split('').map((c) => (c === 'd' ? '5' : c === '4' ? '5' : c)).join(''))));
+
+// 5. stink (12x12) — slow heavy cloud, near-black, 2 frames
+const stinkFrames: string[][] = [
+  [
+    '....4444....',
+    '..44ffff44..',
+    '.4fffffff44.',
+    '.4fff44ff44.',
+    '.4ff4444f44.',
+    '.4ff4444f44.',
+    '.4fff44ff44.',
+    '.4fffffff44.',
+    '..44ffff44..',
+    '....4444....',
+    '............',
+    '............',
+  ],
+  [
+    '....4444....',
+    '..44ffff44..',
+    '.4fffffff44.',
+    '.4fff44ff44.',
+    '.4ff4444f44.',
+    '.4ff4444f44.',
+    '.4fff44ff44.',
+    '.4fffffff44.',
+    '..44ffff44..',
+    '....4444....',
+    '..44....44..',
+    '............',
+  ],
+];
+const stink = mk(12, 12, stinkFrames);
+const stinkHit = mk(12, 12, stinkFrames.map((f) => f.map((row) =>
+  row.split('').map((c) => (c === 'f' ? '5' : c === '4' ? '5' : c)).join(''))));
+
+// 6. sponge (10x10) — shielded, yellow sponge with dark pores, 2 frames
+const spongeFrames: string[][] = [
+  [
+    '..444444..',
+    '.42222224.',
+    '.42552264.',
+    '.42266224.',
+    '.42562224.',
+    '.42265524.',
+    '.42222624.',
+    '.42222224.',
+    '..444444..',
+    '..........',
+  ],
+  [
+    '..444444..',
+    '.42222224.',
+    '.42652254.',
+    '.42226524.',
+    '.42526624.',
+    '.42226524.',
+    '.42562224.',
+    '.42222224.',
+    '..444444..',
+    '..........',
+  ],
+];
+const sponge = mk(10, 10, spongeFrames);
+const spongeHit = mk(10, 10, spongeFrames.map((f) => f.map((row) =>
+  row.split('').map((c) => (c === '2' ? '5' : c === '4' ? '5' : c === '6' ? '4' : c)).join(''))));
+
+// ---------- M3 bosses (14x14) + Final Flush (16x16) ----------
+// Colonel C — a squat colon-shaped brute, gold-brown with eyes
+const colonelFrames: string[][] = [
+  [
+    '..4444444444..',
+    '.422222222224.',
+    '.422552255224.',
+    '.422652265224.',
+    '.422222222224.',
+    '.422222222224.',
+    '.422222222224.',
+    '.422222222224.',
+    '.422222222224.',
+    '.422222222224.',
+    '.422222222224.',
+    '.422222222224.',
+    '..4444444444..',
+    '..............',
+  ],
+  [
+    '..4444444444..',
+    '.422222222224.',
+    '.422652265224.',
+    '.422552255224.',
+    '.422222222224.',
+    '.422222222224.',
+    '.422222222224.',
+    '.422222222224.',
+    '.422222222224.',
+    '.422222222224.',
+    '.422222222224.',
+    '.422222222224.',
+    '..4444444444..',
+    '..............',
+  ],
+];
+const colonel = mk(14, 14, colonelFrames);
+const colonelHit = mk(14, 14, colonelFrames.map((f) => f.map((row) =>
+  row.split('').map((c) => (c === '2' ? '5' : c === '4' ? '5' : c === '6' ? '4' : c)).join(''))));
+
+// The Constipation — a big clenched lump, dark brown, 14x14
+const constipationFrames: string[][] = [
+  [
+    '....444444....',
+    '..44dddddd44..',
+    '.4dddddddddd4.',
+    '.4dd44dd44dd4.',
+    '.4dddddddddd4.',
+    '.4dd44dd44dd4.',
+    '.4dddddddddd4.',
+    '.4dd44dd44dd4.',
+    '.4dddddddddd4.',
+    '.4dd44dd44dd4.',
+    '.4dddddddddd4.',
+    '..44dddddd44..',
+    '....444444....',
+    '..............',
+  ],
+  [
+    '....444444....',
+    '..44dddddd44..',
+    '.4dddddddddd4.',
+    '.4dd44dd44dd4.',
+    '.4dddddddddd4.',
+    '.4dd44dd44dd4.',
+    '.4dddddddddd4.',
+    '.4dd44dd44dd4.',
+    '.4dddddddddd4.',
+    '.4dd44dd44dd4.',
+    '.4dddddddddd4.',
+    '..44dddddd44..',
+    '....444444....',
+    '..............',
+  ],
+];
+const constipation = mk(14, 14, constipationFrames);
+const constipationHit = mk(14, 14, constipationFrames.map((f) => f.map((row) =>
+  row.split('').map((c) => (c === 'd' ? '5' : c === '4' ? '5' : c)).join(''))));
+
+// The Diarrhea Express — a long fast slither, light brown, 14x14
+const expressFrames: string[][] = [
+  [
+    '..............',
+    '....444444....',
+    '..44dddddd44..',
+    '.4dddddddddd4.',
+    '.4dd55dd55dd4.',
+    '.4dddddddddd4.',
+    '.4dddddddddd4.',
+    '.4dddddddddd4.',
+    '..44dddddd44..',
+    '....444444....',
+    '..............',
+    '..............',
+    '..............',
+    '..............',
+  ],
+  [
+    '..............',
+    '....444444....',
+    '..44dddddd44..',
+    '.4dddddddddd4.',
+    '.4dd55dd55dd4.',
+    '.4dddddddddd4.',
+    '.4dddddddddd4.',
+    '.4dddddddddd4.',
+    '..44dddddd44..',
+    '....444444....',
+    '..............',
+    '..............',
+    '..............',
+    '..............',
+  ],
+];
+const express = mk(14, 14, expressFrames);
+const expressHit = mk(14, 14, expressFrames.map((f) => f.map((row) =>
+  row.split('').map((c) => (c === 'd' ? '5' : c === '4' ? '5' : c)).join(''))));
+
+// Mr. Sphincter — two-phase clamp boss, pink-gold ring, 14x14
+const sphincterFrames: string[][] = [
+  [
+    '....444444....',
+    '..4222222244..',
+    '.423333333224.',
+    '.423333333224.',
+    '.423333333224.',
+    '.423333333224.',
+    '.423333333224.',
+    '.423333333224.',
+    '.423333333224.',
+    '.423333333224.',
+    '..4222222244..',
+    '....444444....',
+    '..............',
+    '..............',
+  ],
+  [
+    '....444444....',
+    '..4222222244..',
+    '.423333333224.',
+    '.423333333224.',
+    '.423333333224.',
+    '.423333333224.',
+    '.423333333224.',
+    '.423333333224.',
+    '.423333333224.',
+    '.423333333224.',
+    '..4222222244..',
+    '....444444....',
+    '..............',
+    '..............',
+  ],
+];
+const sphincter = mk(14, 14, sphincterFrames);
+const sphincterHit = mk(14, 14, sphincterFrames.map((f) => f.map((row) =>
+  row.split('').map((c) => (c === '3' ? '5' : c === '4' ? '5' : c)).join(''))));
+
+// THE FINAL FLUSH — a giant scythe-wielding poop, 16x16
+const flushFrames: string[][] = [
+  [
+    '.....444444.....',
+    '...44dddddd44...',
+    '..4dddddddddd4..',
+    '.4ddd44dd44dd4..',
+    '.4dddddddddd44..',
+    '.4ddd44dd44dd4..',
+    '.4dddddddddd4...',
+    '.4dd44dd44dd4...',
+    '.4dddddddddd4...',
+    '.4dd44dd44dd4...',
+    '.4dddddddddd4...',
+    '..4dddddddd4....',
+    '...44dddd44.....',
+    '.....4444.......',
+    '................',
+    '................',
+  ],
+  [
+    '.....444444.....',
+    '...44dddddd44...',
+    '..4dddddddddd4..',
+    '.4ddd44dd44dd4..',
+    '.4dddddddddd44..',
+    '.4ddd44dd44dd4..',
+    '.4dddddddddd4...',
+    '.4dd44dd44dd4...',
+    '.4dddddddddd4...',
+    '.4dd44dd44dd4...',
+    '.4dddddddddd4...',
+    '..4dddddddd4....',
+    '...44dddd44.....',
+    '.....4444.......',
+    '................',
+    '................',
+  ],
+];
+const flush = mk(16, 16, flushFrames);
+const flushHit = mk(16, 16, flushFrames.map((f) => f.map((row) =>
+  row.split('').map((c) => (c === 'd' ? '5' : c === '4' ? '5' : c)).join(''))));
+
+// ---------- M3 stage items ----------
+// goldbag (10x10) — floor gold pickup
+const goldbag = mk(10, 10, [
+  [
+    '...444....',
+    '..422244..',
+    '.42222224.',
+    '.42222224.',
+    '.42233224.',
+    '.42222224.',
+    '..422224..',
+    '...4444...',
+    '..........',
+    '..........',
+  ],
+]);
+// donut (10x10) — floor heal pickup
+const donut = mk(10, 10, [
+  [
+    '..444444..',
+    '.42222224.',
+    '.42266224.',
+    '.42266224.',
+    '.42222224.',
+    '.42222224.',
+    '..444444..',
+    '..........',
+    '..........',
+    '..........',
+  ],
+]);
+
 export const SPRITES: Record<string, Sprite> = {
   crouton, croutonHit, bubble, bubbleHit, gem, bolt,
   plop, cracker, boss, bossHit, chest,
+  droplet, crumb, crumbHit, mop, mopHit, stink, stinkHit,
+  sponge, spongeHit, colonel, colonelHit, constipation, constipationHit,
+  express, expressHit, sphincter, sphincterHit, flush, flushHit,
+  goldbag, donut,
 };
 
 // ---------- 8x8 bitmap font ----------
