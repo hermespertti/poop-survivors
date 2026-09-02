@@ -533,7 +533,7 @@ const BOSS_STATS: Record<string, { hp: number; speed: number; dmg: number; radiu
   constipation: { hp: 2000, speed: 14, dmg: 16, radius: 13 },
   express:      { hp: 1400, speed: 55, dmg: 14, radius: 10 },
   sphincter:    { hp: 2600, speed: 20, dmg: 18, radius: 13 },
-  flush:        { hp: 4000, speed: 30, dmg: 30, radius: 14 },
+  flush:        { hp: 1200, speed: 30, dmg: 30, radius: 14 },
 };
 function spawnBoss(kind: string, name: string): void {
   const st = BOSS_STATS[kind];
@@ -930,6 +930,8 @@ function update(): void {
     }
   }
   // THE FINAL FLUSH (30:00): spawns at RUN_LEN; killable → victory+gold, touch → flushed
+  // The flush hp does NOT time-scale (unlike bosses) — a 30:00 player's build
+  // must be able to kill it in ~8s of contact window, so it stays flat.
   if (!G.flush && G.time >= RUN_LEN && !G.flushResolved) {
     const st = BOSS_STATS.flush;
     G.flush = {

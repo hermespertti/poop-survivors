@@ -90,9 +90,11 @@ ok(sf > 0, `SUPER FART fires post-evolution (${sf} volleys)`);
 await page.evaluate(() => window.__cap.unfreeze());
 
 // B3: passive stat multipliers — the GDD's numbers, exactly
+// (crouton carries a +10% damage CHARACTER bonus, so the fresh baseline is
+// dmg 1.1 / cd 1 / speed 1 / xp 1 — the M4 characters shifted the baseline)
 async function statOf(fn) { return page.evaluate(fn); }
 let r = await statOf(() => { const c = window.__cap; c.restartPlay(777); return c.state(); });
-ok(r.stats.dmgMult === 1 && r.stats.cdMult === 1 && r.stats.speedMult === 1 && r.stats.xpMult === 1, 'passives: multipliers start at 1.0');
+ok(Math.abs(r.stats.dmgMult - 1.1) < 1e-9 && r.stats.cdMult === 1 && r.stats.speedMult === 1 && r.stats.xpMult === 1, 'passives: fresh baseline (dmg 1.1 w/ crouton bonus, rest 1.0)');
 r = await statOf(() => { const c = window.__cap; c.restart(777); c.givePassive('meats', 3); return c.state(); });
 ok(Math.abs(r.stats.dmgMult - 1.3) < 1e-9, `meats x3 → +30% damage (got ${r.stats.dmgMult})`);
 r = await statOf(() => { const c = window.__cap; c.restart(777); c.givePassive('quick', 2); return c.state(); });
@@ -171,7 +173,7 @@ r = await statOf(() => {
   c.givePassive('quick', 1);
   return { ready: c.evoReady() };
 });
-ok(r.ready === true, 'evolution: whip 8 + Quick Hands → evoReady');
+ok(r.ready && r.ready.baseId === 'fartwhip' && r.ready.toId === 'superfart', 'evolution: whip 8 + Quick Hands → evoReady');
 await page.evaluate(() => {
   const c = window.__cap;
   c.restartPlay(1212);
