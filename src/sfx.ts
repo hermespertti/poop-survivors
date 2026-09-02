@@ -9,6 +9,8 @@ let musicGain: GainNode | null = null;
 let musicTimer: number | null = null;
 let musicStep = 0;
 let started = false;
+let voiceCount = 0; // concurrent one-shots (voice cap)
+setInterval(() => { if (voiceCount > 0) voiceCount = 0; }, 100); // decay window
 
 const MUTE_KEY = 'poop-survivors-mute';
 function muted(): boolean { return localStorage.getItem(MUTE_KEY) === '1'; }
@@ -75,6 +77,11 @@ function noise(dur: number, vol: number, cut: number): void {
 
 export function sfx(kind: string): void {
   if (!ensure()) return;
+  // voice cap: max ~8 one-shots per 100ms window — under heavy clatter
+  // (hundreds of hits/second) this keeps the audio graph cheap so the game
+  // loop stays real-time
+  if (voiceCount > 8) return;
+  voiceCount++;
   if (kind === 'shoot') blip(620, 0.07, 'square', 0.05, 0.6);
   else if (kind === 'hit') noise(0.06, 0.10, 1800);
   else if (kind === 'levelup') { blip(520, 0.09, 'square', 0.12); setTimeout(() => blip(660, 0.09, 'square', 0.12), 90); setTimeout(() => blip(780, 0.14, 'square', 0.12), 180); }
@@ -84,6 +91,10 @@ export function sfx(kind: string): void {
   else if (kind === 'flush') { noise(0.8, 0.14, 900); blip(80, 0.6, 'sawtooth', 0.12, 0.4); }
   else if (kind === 'death') { blip(300, 0.4, 'sawtooth', 0.14, 0.3); noise(0.3, 0.10, 500); }
   else if (kind === 'win') { blip(523, 0.1, 'square', 0.12); setTimeout(() => blip(659, 0.1, 'square', 0.12), 110); setTimeout(() => blip(784, 0.1, 'square', 0.12), 220); setTimeout(() => blip(1046, 0.3, 'square', 0.12), 330); }
+  else if (kind === 'pickup') { blip(880, 0.06, 'square', 0.09); setTimeout(() => blip(1320, 0.08, 'square', 0.08), 40); }
+  else if (kind === 'gem') { blip(1046, 0.04, 'triangle', 0.05); }
+  else if (kind === 'hurt') { blip(220, 0.12, 'sawtooth', 0.10, 0.5); noise(0.08, 0.07, 500); }
+  else if (kind === 'pop') { blip(320, 0.05, 'triangle', 0.07, 1.8); }
 }
 
 // ---------- music: 8-bar loop, two voices + noise hat, scheduled ahead ----------

@@ -6,7 +6,7 @@
 // Art: hand-authored pixel arrays over one 16-color palette, 8x8 bitmap font.
 
 import { PALETTE, SPRITES, drawSprite, drawScaled, drawText } from './art';
-import { sfx, toggleMute } from './sfx';
+import { sfx, toggleMute, musicIntensity } from './sfx';
 
 // ---------- deterministic RNG (mulberry32) ----------
 function mulberry32(seed: number) {
@@ -387,6 +387,7 @@ function damageEnemy(e: Enemy, dmg: number, srcX: number, srcZ: number): void {
     const idx = G.enemies.indexOf(e);
     if (idx >= 0) G.enemies.splice(idx, 1);
     G.gems.push({ x: e.x, z: e.z, val: e.xp, vx: (G.rng() - 0.5) * 40, vz: (G.rng() - 0.5) * 40, pulled: false });
+    sfx('pop'); // enemy dies — a squishy little pop
   }
 }
 
@@ -479,6 +480,7 @@ function fireWeapons(): void {
     p.face = Math.atan2(n.e.z - p.z, n.e.x - p.x);
     w.cd = wCd(id, w.lvl);
     G.stats.shots[id] = (G.stats.shots[id] || 0) + 1;
+    sfx('shoot'); // one blip per weapon volley (not per bullet)
     if (id === 'fartwhip') {
       const count = Math.min(3, 1 + Math.floor(w.lvl / 3));
       for (let k = 0; k < count; k++) {
@@ -552,9 +554,11 @@ function hitBoss(dmg: number, srcX: number, srcZ: number): void {
   if (!b) return;
   b.hp -= dmg; b.hitT = 0.1;
   G.dmgNums.push({ x: b.x, z: b.z - 10, vy: -22, t: 0.7, txt: String(Math.round(dmg)), crit: false });
+  sfx('hit'); // boss hit — heavier clatter than an enemy hit
   if (b.hp <= 0) {
     G.boss = null;
     G.bossKilled++;
+    sfx('chest'); // boss dies → the chest fanfare (drop is the chest)
     // BOSS DROPS (VS rule): a chest ALWAYS + a gold bag. Chests from the
     // 10:00+ bosses (COLONEL C onward) are evolution-grade (they can resolve
     // an evolution); earlier chests fall through to gold+heal if no evo.
@@ -573,6 +577,7 @@ function damageWall(e: Enemy, dmg: number, srcX: number, srcZ: number, idx: numb
   if (e.hp <= 0) {
     G.wall.splice(idx, 1);
     G.kills++;
+    sfx('pop');
   }
 }
 // THE FINAL FLUSH: killable → victory + bonus gold; touching you → flushed
@@ -581,9 +586,11 @@ function hitFlush(dmg: number, srcX: number, srcZ: number): void {
   if (!f) return;
   f.hp -= dmg; f.hitT = 0.1;
   G.dmgNums.push({ x: f.x, z: f.z - 12, vy: -22, t: 0.7, txt: String(Math.round(dmg)), crit: false });
+  sfx('hit'); // flush takes a hit — the same clatter as an enemy hit
   if (f.hp <= 0) {
     G.flush = null;
     G.gold += 500; // bonus gold for killing the Flush
+    sfx('win');
     endRun(true, false);
     G.shake = 12; G.flashT = 0.5;
   }
@@ -728,9 +735,12 @@ const DT = 1 / 60;
 const RUN_LEN = 1800; // 30:00 — the full director run (M3)
 let orbitPos: { x: number; z: number; r: number } | null = null;
 let orbit2Pos: { x: number; z: number; r: number } | null = null;
+let muteMsgT = 0; // "muted" banner timer (set by the M key)
 
 function update(): void {
   syncKeys();
+  // mute toggle: M — works on title/play/levelup/dead/win (before mode gates)
+  if (justPressed('m')) { const on = toggleMute(); G.flashT = 0.2; muteMsgT = on ? 0 : 1.4; }
   if (G.mode === 'levelup') {
     const idx = keyIndex('1', '2', '3');
     if (idx >= 0) pickOption(idx);
@@ -867,6 +877,7 @@ function update(): void {
     if (d < e.radius + PLAYER.radius && p.invuln <= 0) {
       p.hp -= Math.max(1, e.dmg - G.armor); p.invuln = PLAYER.invulnAfterHit;
       G.shake = 6; G.flashT = Math.max(G.flashT, 0.12);
+      sfx('hurt'); // the player takes damage — distinct from the enemy 'hit' clatter
       G.dmgNums.push({ x: p.x, z: p.z - 8, vy: -26, t: 0.8, txt: '-' + Math.max(1, e.dmg - G.armor), crit: true });
       if (p.hp <= 0) { p.hp = 0; endRun(false, false); return; }
     }
@@ -925,6 +936,7 @@ function update(): void {
     if (d < b.radius + PLAYER.radius && p.invuln <= 0) {
       p.hp -= Math.max(1, b.dmg - G.armor); p.invuln = PLAYER.invulnAfterHit;
       G.shake = 10; G.flashT = 0.2;
+      sfx('hurt');
       G.dmgNums.push({ x: p.x, z: p.z - 10, vy: -26, t: 0.9, txt: '-' + Math.max(1, b.dmg - G.armor), crit: true });
       if (p.hp <= 0) { p.hp = 0; endRun(false, false); return; }
     }
@@ -966,6 +978,7 @@ function update(): void {
       if (d < e.radius + PLAYER.radius && p.invuln <= 0) {
         p.hp -= Math.max(1, e.dmg - G.armor); p.invuln = PLAYER.invulnAfterHit;
         G.shake = 6;
+        sfx('hurt');
         if (p.hp <= 0) { p.hp = 0; endRun(false, false); return; }
       }
     }
@@ -982,6 +995,7 @@ function update(): void {
       G.items.splice(i, 1);
       G.stats.itemTaken++;
       G.flashT = Math.max(G.flashT, 0.15);
+      sfx('pickup'); // stage-item pickup blip (gold bag / donut)
     }
   }
 
@@ -989,6 +1003,8 @@ function update(): void {
   G.spawnCd -= DT;
   G.spawnInterval = Math.max(0.25, 1.1 - G.time / 300);
   if (G.spawnCd <= 0) { spawnEnemy(pickKind()); G.spawnCd = G.spawnInterval; }
+  // music intensity follows the pressure curve (density → louder/heavier)
+  musicIntensity(Math.min(1.6, 0.4 + G.enemies.length / 120 + (G.boss ? 0.4 : 0)));
   // wave bursts: absolute schedule — 1:00, then every 2 min, size grows
   const waveNext = Math.floor((G.time - 60) / 120) + 1;
   if (G.time >= 60 && G.waveIdx < waveNext) {
@@ -1013,7 +1029,7 @@ function update(): void {
     if (d < magnetR) g.pulled = true;
     if (g.pulled) { g.x += (dx / d) * 160 * DT; g.z += (dz / d) * 160 * DT; }
     else { g.x += g.vx * DT; g.z += g.vz * DT; g.vx *= 0.9; g.vz *= 0.9; }
-    if (d < PLAYER.radius + 3) { G.gems.splice(i, 1); G.stats.gems++; gainXp(g.val * G.stats.xpMult); }
+    if (d < PLAYER.radius + 3) { G.gems.splice(i, 1); G.stats.gems++; gainXp(g.val * G.stats.xpMult); sfx('gem'); }
   }
 
   // damage numbers
@@ -1250,6 +1266,11 @@ function drawHud(t: number): void {
     if (blink) center('THE FINAL FLUSH!', 76, 1);
   } else if (G.time > RUN_LEN - 30 && !G.flushResolved) {
     center('THE FINAL FLUSH APPROACHES...', 76, 0);
+  }
+  // mute banner (M key): "MUTED" while the timer runs
+  if (muteMsgT > 0) {
+    muteMsgT -= DT;
+    if (Math.floor(t * 4) % 2 === 0) center('MUTED [M]', 66, 2);
   }
 
   if (G.mode === 'dead') overlay(G.flushed ? 'FLUSHED' : 'SOUPED', `lv${G.level}  kills ${G.kills}  ${fmt(G.time)}`, 'press SPACE to retry', t, true);

@@ -301,6 +301,17 @@ await page.evaluate(() => {
 const seed = 1337;
 let sawBoss = false, sawChest = false, maxLevelSeen = 1;
 await page.evaluate((sd) => window.__cap.restart(sd), seed);
+// kit head start (the M3/M4 soak precedent): the gates below test the RUN
+// (leveling, boss appearance, stat scaling) against a competent build, not the
+// real-time option lottery — this bot runs at 60fps wall-clock, so outcomes
+// are timing-dependent without a deterministic kit.
+await page.evaluate(() => {
+  const c = window.__cap;
+  c.giveWeaponNow('fartwhip', 8);
+  c.giveWeaponNow('crackerring', 8);
+  c.givePassiveNow('quick', 5);
+  c.givePassiveNow('meats', 5);
+});
 const t0 = Date.now();
 let finalState = null;
 while (Date.now() - t0 < 330000) {
