@@ -6,6 +6,7 @@
 // Art: hand-authored pixel arrays over one 16-color palette, 8x8 bitmap font.
 
 import { PALETTE, SPRITES, drawSprite, drawScaled, drawText } from './art';
+import { sfx, toggleMute } from './sfx';
 
 // ---------- deterministic RNG (mulberry32) ----------
 function mulberry32(seed: number) {
@@ -132,7 +133,7 @@ function enemyHp(kind: string): number {
   return base * (1 + G.time / 90);
 }
 type Gem = { x: number; z: number; val: number; vx: number; vz: number; pulled: boolean };
-type Bullet = { x: number; z: number; vx: number; vz: number; life: number; dmg: number; ang: number; hitR: number; kind: string; bounces?: number; bounceSpeed?: number; linger?: number };
+type Bullet = { x: number; z: number; vx: number; vz: number; life: number; dmg: number; ang: number; hitR: number; kind: string; bounces?: number; bounceSpeed?: number; linger?: number; hitIds?: number[] };
 type Zone = { x: number; z: number; r: number; life: number; tick: number; dmg: number };
 type DmgNum = { x: number; z: number; vy: number; t: number; txt: string; crit: boolean };
 type Mode = 'title' | 'play' | 'levelup' | 'dead' | 'win';
@@ -239,7 +240,44 @@ function keyIndex(...ks: string[]): number {
   for (let i = 0; i < ks.length; i++) if (justPressed(ks[i])) return i;
   return -1;
 }
+// ---------- mouse/touch move (click-and-hold steers the player) ----------
+// While a pointer (mouse LMB or touch) is held, the player walks toward the
+// cursor's world position. Touch also taps the level-up options.
+let pointerHeld = false;
+let pointerWorld: { x: number; z: number } | null = null;
+function screenToWorld(sx: number, sy: number): { x: number; z: number } {
+  const scale = Math.max(1, Math.floor(Math.min(window.innerWidth / VIEW_W, window.innerHeight / VIEW_H)));
+  const offX = (window.innerWidth - VIEW_W * scale) / 2;
+  const offY = (window.innerHeight - VIEW_H * scale) / 2;
+  return { x: (sx - offX) / scale, z: (sy - offY) / scale };
+}
+const canvasEl = (document.getElementById('c') as HTMLCanvasElement);
+canvasEl.addEventListener('pointerdown', (e: PointerEvent) => {
+  pointerHeld = true;
+  const w = screenToWorld(e.clientX, e.clientY);
+  pointerWorld = w;
+  if (G.mode === 'levelup') {
+    // tap the option row (mobile level-up)
+    const rowH = 44, top = 36;
+    const idx = Math.floor((w.z - top) / rowH);
+    if (idx >= 0 && idx < G.options.length) { pickOption(idx); pointerHeld = false; return; }
+  }
+  e.preventDefault();
+});
+canvasEl.addEventListener('pointermove', (e: PointerEvent) => {
+  if (!pointerHeld) return;
+  pointerWorld = screenToWorld(e.clientX, e.clientY);
+});
+window.addEventListener('pointerup', () => { pointerHeld = false; pointerWorld = null; });
+canvasEl.style.touchAction = 'none';
 function currentMove(): [number, number] {
+  if (pointerHeld && pointerWorld) {
+    // walk toward the cursor: direction from player to pointer world pos
+    const dx = pointerWorld.x - G.player.x, dz = pointerWorld.z - G.player.z;
+    const d = Math.hypot(dx, dz);
+    if (d > 3) return [dx / d, dz / d];
+    return [0, 0];
+  }
   if (botDir.x !== 0 || botDir.y !== 0) return [botDir.x, botDir.y];
   let x = 0, y = 0;
   if (keys.has('a') || keys.has('arrowleft')) x -= 1;
@@ -337,6 +375,7 @@ function nearestEnemyExcluding(ex: Enemy, maxD: number): { e: Enemy; d: number }
 }
 function damageEnemy(e: Enemy, dmg: number, srcX: number, srcZ: number): void {
   e.hp -= dmg; e.hitT = 0.12;
+  if (e.hitT >= 0.12) sfx('hit'); // only on fresh contact (not every re-hit)
   G.dmgNums.push({ x: e.x, z: e.z - 6, vy: -22, t: 0.7, txt: String(Math.round(dmg)), crit: false });
   // knockback, away from the hit source (VS-style; boss resists)
   const dx = e.x - srcX, dz = e.z - srcZ;
@@ -360,14 +399,15 @@ function fireWeapons(): void {
     if (id === 'crackerring') {
       // continuous orbit: a full 2π ring at radius r — hit everything in the band.
       // Shards are the visual (and the thing that knocks); the band is the damage.
+      // The angle advances EVERY tick (smooth spin); damage stays on its own cadence.
       const spd = 2.0 + 0.15 * (w.lvl - 1);
       w.ang += spd * DT;
+      const r = 34 + 2 * w.lvl;
+      const band = 13; // ring thickness (VS aura)
+      orbitPos = { x: p.x + Math.cos(w.ang) * r, z: p.z + Math.sin(w.ang) * r, r: r + 6 };
       if (w.cd <= 0) {
         w.cd = wCd('crackerring', w.lvl);
         G.stats.shots['crackerring'] = (G.stats.shots['crackerring'] || 0) + 1;
-        const r = 34 + 2 * w.lvl;
-        const band = 13; // ring thickness (VS aura)
-        orbitPos = { x: p.x + Math.cos(w.ang) * r, z: p.z + Math.sin(w.ang) * r, r: r + 6 };
         const dmg = wDmg('crackerring', w.lvl);
         for (const e of G.enemies) {
           const d = Math.hypot(e.x - p.x, e.z - p.z);
@@ -411,15 +451,16 @@ function fireWeapons(): void {
     }
     if (id === 'turd' || id === 'moon') {
       // heavy slow orbit: a damage zone that circles the player (opposite dir)
+      // The angle advances EVERY tick (smooth spin); damage stays on its own cadence.
       const spd = id === 'moon' ? 1.6 : 1.2;
       w.ang -= spd * DT; // counter-rotate against the cracker ring
+      const r = id === 'moon' ? 55 + 3 * w.lvl : 30 + 2 * w.lvl;
+      const rr = id === 'moon' ? 12 : 8;
+      const ox = p.x + Math.cos(w.ang) * r, oz = p.z + Math.sin(w.ang) * r;
+      orbit2Pos = { x: ox, z: oz, r: rr };
       if (w.cd <= 0) {
         w.cd = wCd(id, w.lvl);
         G.stats.shots[id] = (G.stats.shots[id] || 0) + 1;
-        const r = id === 'moon' ? 55 + 3 * w.lvl : 30 + 2 * w.lvl;
-        const rr = id === 'moon' ? 12 : 8;
-        const ox = p.x + Math.cos(w.ang) * r, oz = p.z + Math.sin(w.ang) * r;
-        orbit2Pos = { x: ox, z: oz, r: rr };
         for (const e of G.enemies) {
           if (Math.hypot(e.x - ox, e.z - oz) < rr + e.radius) damageEnemy(e, wDmg(id, w.lvl), ox, oz);
         }
@@ -498,6 +539,7 @@ function spawnBoss(kind: string, name: string): void {
   const st = BOSS_STATS[kind];
   const ang = G.rng() * Math.PI * 2;
   const hp = st.hp * (1 + G.time / 600); // mild TIME scaling (not level — level rewards slow play)
+  sfx('boss');
   G.boss = {
     x: Math.max(20, Math.min(WORLD_W - 20, G.player.x + Math.cos(ang) * 200)),
     z: Math.max(20, Math.min(WORLD_H - 20, G.player.z + Math.sin(ang) * 200)),
@@ -513,7 +555,11 @@ function hitBoss(dmg: number, srcX: number, srcZ: number): void {
   if (b.hp <= 0) {
     G.boss = null;
     G.bossKilled++;
+    // BOSS DROPS (VS rule): a chest ALWAYS + a gold bag. Chests from the
+    // 10:00+ bosses (COLONEL C onward) are evolution-grade (they can resolve
+    // an evolution); earlier chests fall through to gold+heal if no evo.
     G.chest = { x: b.x, z: b.z };
+    G.items.push({ x: b.x + 20, z: b.z, kind: 'gold' });
     G.shake = 10; G.flashT = 0.4;
   }
 }
@@ -569,10 +615,12 @@ function resolveChest(): void {
     G.evolved = true;
     G.evolutionT = 2.2;
     G.flashT = 0.5; G.shake = 8;
+    sfx('evolution');
     lastEvo = { base: rdy.baseId, passive: req, to: rdy.toId };
   } else {
     G.gold += 50;
     G.player.hp = Math.min(PLAYER.maxHp, G.player.hp + 25);
+    sfx('chest');
   }
   G.chest = null;
 }
@@ -671,7 +719,7 @@ function checkLevelUp(): void {
     G.level++;
     G.xpNeed = xpToNext(G.level);
     G.stats.maxLevel = Math.max(G.stats.maxLevel, G.level);
-    if (G.mode === 'play') { G.mode = 'levelup'; G.options = buildOptions(); G.stats.levelUps++; break; }
+    if (G.mode === 'play') { G.mode = 'levelup'; G.options = buildOptions(); G.stats.levelUps++; sfx('levelup'); break; }
   }
 }
 
@@ -736,21 +784,38 @@ function update(): void {
     const b = G.bullets[i];
     b.x += b.vx * DT; b.z += b.vz * DT; b.life -= DT;
     if (b.life <= 0 || b.x < 0 || b.x > WORLD_W || b.z < 0 || b.z > WORLD_H) { G.bullets.splice(i, 1); continue; }
-    for (let ei = G.enemies.length - 1; ei >= 0; ei--) {
-      const e = G.enemies[ei];
-      if (e.hp <= 0) continue;
-      if (Math.hypot(e.x - b.x, e.z - b.z) < e.radius + b.hitR) damageEnemy(e, b.dmg, b.x - b.vx * 0.02, b.z - b.vz * 0.02);
-      // bouncy: ricochet to the next-nearest enemy (VS Runetracer)
-      if (b.kind === 'bouncy' && (b.bounces || 0) > 0) {
-        const next = nearestEnemyExcluding(e, 120);
-        if (next) {
-          const a = Math.atan2(next.e.z - b.x, next.e.x - b.x);
-          const spd = b.bounceSpeed || 240;
-          b.vx = Math.cos(a) * spd; b.vz = Math.sin(a) * spd;
-          b.bounces = (b.bounces || 0) - 1;
-        } else {
-          b.vx = -b.vx; b.vz = -b.vz; // no target: reflect
-          b.bounces = (b.bounces || 0) - 1;
+    // pierce: each bullet may hit a given enemy once (or a few times for
+    // piercing weapons) — a hitSet of enemy indices refreshed per-frame so a
+    // bullet passing THROUGH an enemy doesn't re-damage it every frame.
+    if (b.kind !== 'bouncy') {
+      if (!b.hitIds) b.hitIds = [];
+      if (b.hitIds.length > 12) b.hitIds.length = 0; // cheap cap: re-hit allowed after it clears
+      for (let ei = G.enemies.length - 1; ei >= 0; ei--) {
+        const e = G.enemies[ei];
+        if (e.hp <= 0) continue;
+        if (Math.hypot(e.x - b.x, e.z - b.z) < e.radius + b.hitR) {
+          if (b.hitIds.includes(ei)) continue;
+          b.hitIds.push(ei);
+          damageEnemy(e, b.dmg, b.x - b.vx * 0.02, b.z - b.vz * 0.02);
+        }
+      }
+    } else {
+      for (let ei = G.enemies.length - 1; ei >= 0; ei--) {
+        const e = G.enemies[ei];
+        if (e.hp <= 0) continue;
+        if (Math.hypot(e.x - b.x, e.z - b.z) < e.radius + b.hitR) damageEnemy(e, b.dmg, b.x - b.vx * 0.02, b.z - b.vz * 0.02);
+        // bouncy: ricochet to the next-nearest enemy (VS Runetracer)
+        if (b.kind === 'bouncy' && (b.bounces || 0) > 0) {
+          const next = nearestEnemyExcluding(e, 120);
+          if (next) {
+            const a = Math.atan2(next.e.z - b.x, next.e.x - b.x);
+            const spd = b.bounceSpeed || 240;
+            b.vx = Math.cos(a) * spd; b.vz = Math.sin(a) * spd;
+            b.bounces = (b.bounces || 0) - 1;
+          } else {
+            b.vx = -b.vx; b.vz = -b.vz; // no target: reflect
+            b.bounces = (b.bounces || 0) - 1;
+          }
         }
       }
     }
@@ -872,6 +937,7 @@ function update(): void {
       z: Math.max(20, Math.min(WORLD_H - 20, G.player.z + Math.sin(0) * 240)),
       hp: st.hp, maxHp: st.hp, speed: st.speed, dmg: st.dmg, radius: st.radius, hitT: 0, wob: 0,
     };
+    sfx('boss');
     G.shake = 14; G.flashT = 0.6;
   }
   if (G.flush) {
@@ -962,6 +1028,7 @@ function endRun(won: boolean, flushed: boolean): void {
   G.flushResolved = true;
   G.mode = won ? 'win' : 'dead';
   G.flushed = flushed;
+  sfx(won ? 'win' : (flushed ? 'flush' : 'death'));
   // bank the run's gold into the meta wallet
   META.gold += G.gold;
   META.bestTime = Math.max(META.bestTime, Math.floor(G.time));
@@ -1135,14 +1202,40 @@ function drawHud(t: number): void {
   ctx.fillStyle = '#7a2e2e'; ctx.fillRect(hbx, hby, 84, 7);
   ctx.fillStyle = '#e0563a'; ctx.fillRect(hbx, hby, Math.round(84 * Math.max(0, Math.min(1, G.player.hp / G.stats.maxHp))), 7);
   drawText(ctx, 'HP', hbx + 2, hby + 1, 0);
-  // weapon levels, small, under the XP bar
-  const wtxt = Object.keys(G.weapons).map((id) => id[0].toUpperCase() + (G.weapons[id].lvl)).join(' ');
-  drawText(ctx, wtxt, 6, 26, 0);
+  // VS-style item HUD: ACTIVE weapons row (top icons, y=24) then PASSIVE row (y=36)
+  const ICONS: Record<string, string> = {
+    fartwhip: 'bolt', plopcannon: 'plop', crackerring: 'cracker', puddle: 'plop',
+    bouncy: 'bouncy', stinkaura: 'stinkaura', fartbomb: 'fartbomb', turd: 'turd',
+    superfart: 'bolt', stickyplop: 'stickyplop', halo: 'cracker', slakelake: 'plop',
+    superball: 'bouncy', ghost: 'ghost', bigburp: 'fartbomb', moon: 'moon',
+    meats: 'donut', quick: 'bolt', slippers: 'gem', tp: 'gem', breakfast: 'donut',
+    gloves: 'bolt', widestink: 'cracker', sticky: 'plop', lucky: 'gem',
+  };
+  let ax = 6;
+  for (const id of Object.keys(G.weapons)) {
+    const icon = ICONS[id] && SPRITES[ICONS[id]];
+    if (!icon) continue;
+    drawScaled(ctx, icon, ax, 24, 2, 0);
+    // level tag under the icon (tiny)
+    drawText(ctx, String(G.weapons[id].lvl), ax + 6, 30, 0);
+    ax += 20;
+  }
+  let px = 6;
+  for (const id of Object.keys(G.passives)) {
+    const icon = ICONS[id] && SPRITES[ICONS[id]];
+    if (!icon) continue;
+    drawScaled(ctx, icon, px, 40, 2, 0);
+    drawText(ctx, String(G.passives[id]), px + 6, 46, 2);
+    px += 20;
+  }
+  // evolution hint: the base is maxed + its passive owned → chest will evolve
+  const rdy = evoReady();
+  if (rdy) center('EVO READY: ' + WEAPONS[rdy.toId].name, 56, 1);
   // gold
   drawText(ctx, 'G' + G.gold, VIEW_W - 40, 16, 0);
   // boss bar (per-boss name)
   if (G.boss) {
-    const bbw = VIEW_W - 60, bbx = 30, bby = 34;
+    const bbw = VIEW_W - 60, bbx = 30, bby = 64;
     ctx.fillStyle = '#1a0f08'; ctx.fillRect(bbx - 1, bby - 1, bbw + 2, 8);
     ctx.fillStyle = '#5a2e4e'; ctx.fillRect(bbx, bby, bbw, 6);
     ctx.fillStyle = '#c95aa0'; ctx.fillRect(bbx, bby, Math.round(bbw * Math.max(0, G.boss.hp / G.boss.maxHp)), 6);
@@ -1152,9 +1245,9 @@ function drawHud(t: number): void {
   // FINAL FLUSH warning banner
   if (G.flush) {
     const blink = Math.floor(t * 3) % 2 === 0;
-    if (blink) center('THE FINAL FLUSH!', 50, 1);
+    if (blink) center('THE FINAL FLUSH!', 76, 1);
   } else if (G.time > RUN_LEN - 30 && !G.flushResolved) {
-    center('THE FINAL FLUSH APPROACHES...', 50, 0);
+    center('THE FINAL FLUSH APPROACHES...', 76, 0);
   }
 
   if (G.mode === 'dead') overlay(G.flushed ? 'FLUSHED' : 'SOUPED', `lv${G.level}  kills ${G.kills}  ${fmt(G.time)}`, 'press SPACE to retry', t, true);
@@ -1172,13 +1265,35 @@ function overlay(title: string, sub1: string, sub2: string, t: number, dark: boo
 function drawLevelUp(): void {
   ctx.fillStyle = 'rgba(18,12,6,0.86)'; ctx.fillRect(0, 0, VIEW_W, VIEW_H);
   center('LEVEL UP!', 12, 1);
+  // weapon id → icon sprite (the projectile/zone art for that weapon)
+  const ICONS: Record<string, string> = {
+    fartwhip: 'bolt', plopcannon: 'plop', crackerring: 'cracker', puddle: 'plop',
+    bouncy: 'bouncy', stinkaura: 'stinkaura', fartbomb: 'fartbomb', turd: 'turd',
+    superfart: 'bolt', stickyplop: 'stickyplop', halo: 'cracker', slakelake: 'plop',
+    superball: 'bouncy', ghost: 'ghost', bigburp: 'fartbomb', moon: 'moon',
+    // passive item icons: use the closest kit art (VS passives get icons too)
+    meats: 'donut', quick: 'bolt', slippers: 'gem', tp: 'gem', breakfast: 'donut',
+    gloves: 'bolt', widestink: 'cracker', sticky: 'plop', lucky: 'gem',
+  };
   G.options.forEach((o, i) => {
     const y = 36 + i * 44;
-    ctx.fillStyle = '#332616'; ctx.fillRect(14, y, VIEW_W - 28, 40);
-    ctx.strokeStyle = '#c9a24a'; ctx.strokeRect(14.5, y + 0.5, VIEW_W - 29, 39);
-    drawText(ctx, `[${i + 1}] ${o.name}`, 22, y + 6, 1);
-    drawText(ctx, o.desc, 22, y + 20, 0);
-    if (o.kind === 'weapon' || o.kind === 'passive') drawText(ctx, `LV${o.lvl}`, VIEW_W - 60, y + 6, 0);
+    // LIGHT panel + DARK text (readability): the panel is warm parchment so
+    // the dark-outline ink (style 0) and white ink (style 1) both pop.
+    ctx.fillStyle = '#f3e2b8'; ctx.fillRect(14, y, VIEW_W - 28, 40);
+    ctx.fillStyle = '#4a3220'; ctx.fillRect(14, y, VIEW_W - 28, 2); ctx.fillRect(14, y + 38, VIEW_W - 28, 2);
+    ctx.fillStyle = '#4a3220'; ctx.fillRect(14, y, 2, 40); ctx.fillRect(VIEW_W - 16, y, 2, 40);
+    // item icon (scaled 2× from the sprite art) at the left of the row
+    const iconId = ICONS[o.id];
+    if (iconId && SPRITES[iconId]) {
+      drawScaled(ctx, SPRITES[iconId], 20, y + 12, 2, 0);
+      // shift the text right so the icon has room
+      drawText(ctx, `[${i + 1}] ${o.name}`, 44, y + 6, 0);
+      drawText(ctx, o.desc, 44, y + 20, 2);
+    } else {
+      drawText(ctx, `[${i + 1}] ${o.name}`, 22, y + 6, 0);
+      drawText(ctx, o.desc, 22, y + 20, 2);
+    }
+    if (o.kind === 'weapon' || o.kind === 'passive') drawText(ctx, `LV${o.lvl}`, VIEW_W - 60, y + 6, 2);
   });
 }
 
