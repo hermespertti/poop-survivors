@@ -578,7 +578,162 @@ const flush = mk(16, 16, flushFrames);
 const flushHit = mk(16, 16, flushFrames.map((f) => f.map((row) =>
   row.split('').map((c) => (c === 'd' ? '5' : c === '4' ? '5' : c)).join(''))));
 
-// ---------- M3 stage items ----------
+// ---------- M4 weapons 5-8 (10x10 each) ----------
+[] = [
+  [
+    '...4444...',
+    '.4dddddd4.',
+    '.4dd55dd4.',
+    '4dd5555dd4',
+    '4ddddddddd',
+    '.4dd55dd4.',
+    '.4dddddd4.',
+    '..444444..',
+    '..........',
+    '..........',
+  ],
+  [
+    '...4444...',
+    '.4dddddd4.',
+    '.4d5555d4.',
+    '4d555555d4',
+    '4dddddddd4',
+    '.4d5555d4.',
+    '.4dddddd4.',
+    '..444444..',
+    '..........',
+    '..........',
+  ],
+];
+// stinkaura (10x10) — Stink Aura: a wavy stink cloud puff
+// fartbomb (10x10) — Fart Bomb: a round bomb with a fuse
+[] = [
+  [
+    '..444444..',
+    '.4dddddd4.',
+    '.4d5555d4.',
+    '.4d5555d4.',
+    '.4dddddd4.',
+    '.4dd44dd4.',
+    '.4dddddd4.',
+    '..444444..',
+    '..........',
+    '..........',
+  ],
+  [
+    '..444444..',
+    '.4dddddd4.',
+    '.4d5555d4.',
+    '.4d5555d4.',
+    '.4dddddd4.',
+    '.4dd44dd4.',
+    '.4dddddd4.',
+    '..444444..',
+    '..........',
+    '..........',
+  ],
+];
+// ---------- M4 evolution sprites (12x12) ----------
+// sticky plop (12x12) — big gunk blob that lingers
+// halo of crumbs (12x12) — a glowing gold disc
+// slime lake (12x12) — a wide green lake zone
+// superball (10x10) — Superball Splat: a fast elastic ball
+// (rows verified: each exactly 10 chars)
+[] = [
+  [
+    '...444444...',
+    '..4cccccc4.',
+    '.4cc55cc55.',
+    '.4cc65cc65.',
+    '.4cccccccc.',
+    '.4cc55cc55.',
+    '.4cccccccc.',
+    '.4cccccccc.',
+    '.4c5c5c5c4.',
+    '..cccccc4..',
+    '...44444...',
+    '............',
+  ],
+  [
+    '...444444...',
+    '..4cccccc4.',
+    '.4cc55cc55.',
+    '.4cc65cc65.',
+    '.4cccccccc.',
+    '.4cc65cc65.',
+    '.4cccccccc.',
+    '.4cccccccc.',
+    '.4c5c5c5c4.',
+    '..cccccc4..',
+    '...44444...',
+    '............',
+  ],
+];
+// bigburp (12x12) — BIG BURP: a massive multi-target explosion cloud
+// moon (12x12) — MOON OF THE BOWEL: a full moon of doom
+// ---------- M4 stage 2 (The Bathroom) — tile colors are code-drawn; sprites here are the characters ----------
+[] = [
+  [
+    '...444444...',
+    '..4dddddd4.',
+    '.4dd2222d4.',
+    '.4d2222224.',
+    '.4dd2222d4.',
+    '.4dddddd4.',
+    '.4dd55dd4.',
+    '.4dddddd4.',
+    '..4dddd4..',
+    '...4444...',
+    '............',
+    '............',
+  ],
+  [
+    '...444444...',
+    '..4dddddd4.',
+    '.4dd2222d4.',
+    '.4d2222224.',
+    '.4dd2222d4.',
+    '.4dddddd4.',
+    '.4dd55dd4.',
+    '.4dddddd4.',
+    '..4dddd4..',
+    '...4444...',
+    '..44....44.',
+    '............',
+  ],
+];
+[] = [
+  [
+    '...444444...',
+    '..4777777..',
+    '.477777777.',
+    '.47755577.',
+    '.47756777.',
+    '.47777777.',
+    '.47777777.',
+    '.47755777.',
+    '.47777777.',
+    '..477777..',
+    '...44444...',
+    '............',
+  ],
+  [
+    '...444444...',
+    '..4777777..',
+    '.477777777.',
+    '.47755577.',
+    '.47756777.',
+    '.47777777.',
+    '.47777777.',
+    '.47755777.',
+    '.47777777.',
+    '..477777..',
+    '...44444...',
+    '..44....44.',
+    '............',
+  ],
+];
+// ---------- M3 stage items (restored) ----------
 // goldbag (10x10) — floor gold pickup
 const goldbag = mk(10, 10, [
   [
@@ -610,6 +765,317 @@ const donut = mk(10, 10, [
   ],
 ]);
 
+
+// ---------- M4 sprites (programmatic, width-verified) ----------
+// Ghost of Last Night: a googly ghost that bites
+const ghostFrames: string[][] = [
+  [
+    '...444444...',
+    '..4cccccc4..',
+    '..cc55cc55..',
+    '..cc65cc65..',
+    '..cccccccc..',
+    '..cc55cc55..',
+    '..cccccccc..',
+    '..cccccccc..',
+    '..c5c5c5c5..',
+    '..ccccccc...',
+    '...44444....',
+    '............',
+  ],
+  [
+    '...444444...',
+    '..4cccccc4..',
+    '..cc55cc55..',
+    '..cc65cc65..',
+    '..cccccccc..',
+    '..cc65cc65..',
+    '..cccccccc..',
+    '..cccccccc..',
+    '..c5c5c5c5..',
+    '..ccccccc...',
+    '...44444....',
+    '............',
+  ],
+];
+const ghost = mk(12, 12, ghostFrames);
+const ghostHit = mk(12, 12, ghostFrames.map((f) => f.map((row) =>
+  row.split("").map((c) => (c === 'c' ? '5' : c === '4' ? '5' : c)).join(""))));
+
+// BIG BURP: a massive multi-target explosion cloud
+const bigburpFrames: string[][] = [
+  [
+    '...444444...',
+    '..4ddddd4...',
+    '.4dddddddd..',
+    '..dd5555dd..',
+    '..dd5555dd..',
+    '.4dddddddd..',
+    '.4dddddddd..',
+    '..4ddddd4...',
+    '...444444...',
+    '............',
+    '............',
+    '............',
+  ],
+];
+const bigburp = mk(12, 12, bigburpFrames);
+
+// MOON OF THE BOWEL: a full moon of doom
+const moonFrames: string[][] = [
+  [
+    '...444444...',
+    '..42222224..',
+    '.422222224..',
+    '..22552224..',
+    '..22552224..',
+    '.422222224..',
+    '.422222224..',
+    '.422332224..',
+    '.422222224..',
+    '..42222224..',
+    '...444444...',
+    '............',
+  ],
+];
+const moon = mk(12, 12, moonFrames);
+
+// Hot Dog: a hot dog character, 2 walk frames
+const hotdogFrames: string[][] = [
+  [
+    '...444444...',
+    '..4dddddd4..',
+    '..dd2222dd..',
+    '.d2222222d..',
+    '..dd2222dd..',
+    '..4dddddd4..',
+    '...dd55dd...',
+    '..4dddddd4..',
+    '..4dddddd4..',
+    '...444444...',
+    '............',
+    '............',
+  ],
+  [
+    '...444444...',
+    '..4dddddd4..',
+    '..dd2222dd..',
+    '.d2222222d..',
+    '..dd2222dd..',
+    '..4dddddd4..',
+    '...dd55dd...',
+    '..4dddddd4..',
+    '..4dddddd4..',
+    '...444444...',
+    '..44....44..',
+    '............',
+  ],
+];
+const hotdog = mk(12, 12, hotdogFrames);
+const hotdogHit = mk(12, 12, hotdogFrames.map((f) => f.map((row) =>
+  row.split("").map((c) => (c === 'd' ? '5' : c === '4' ? '5' : c)).join(""))));
+
+// Avocado: the green pit character, 2 walk frames
+const avocadoFrames: string[][] = [
+  [
+    '...444444...',
+    '..47777774..',
+    '.4777777774.',
+    '..77555577..',
+    '..77567777..',
+    '.4777777774.',
+    '.4777777774.',
+    '..77557777..',
+    '.4777777774.',
+    '..47777774..',
+    '...444444...',
+    '............',
+  ],
+  [
+    '...444444...',
+    '..47777774..',
+    '.4777777774.',
+    '..77555577..',
+    '..77567777..',
+    '.4777777774.',
+    '.4777777774.',
+    '..77557777..',
+    '.4777777774.',
+    '..47777774..',
+    '...444444...',
+    '..44....44..',
+  ],
+];
+const avocado = mk(12, 12, avocadoFrames);
+const avocadoHit = mk(12, 12, avocadoFrames.map((f) => f.map((row) =>
+  row.split("").map((c) => (c === '7' ? '5' : c === '4' ? '5' : c)).join(""))));
+
+// Sticky Plop: big gunk blob that lingers
+const stickyplopFrames: string[][] = [
+  [
+    '...444444...',
+    '..4dddddd4..',
+    '.4dddddddd..',
+    '..dd5555dd..',
+    '..dd5555dd..',
+    '.4dddddddd..',
+    '.4dddddddd..',
+    '..4dddddd4..',
+    '...444444...',
+    '............',
+    '............',
+    '............',
+  ],
+];
+const stickyplop = mk(12, 12, stickyplopFrames);
+
+// Halo of Crumbs: a glowing gold disc
+const haloFrames: string[][] = [
+  [
+    '...444444...',
+    '..42222224..',
+    '..25555552..',
+    '..25522552..',
+    '..22552522..',
+    '..22222222..',
+    '..22552522..',
+    '..25522552..',
+    '..25555552..',
+    '..42222224..',
+    '...444444...',
+    '............',
+  ],
+];
+const halo = mk(12, 12, haloFrames);
+
+// Slime Lake: a wide green lake zone
+const slakelakeFrames: string[][] = [
+  [
+    '..44444444..',
+    '.477777777..',
+    '.755555575..',
+    '.755555575..',
+    '.755555575..',
+    '.755555575..',
+    '.755555575..',
+    '.755555575..',
+    '.755555575..',
+    '.477777777..',
+    '..44444444..',
+    '............',
+  ],
+];
+const slakelake = mk(12, 12, slakelakeFrames);
+
+// Bouncy Poop: a rubbery brown ball, 2 bounce frames
+const bouncyFrames: string[][] = [
+  [
+    '...4444...',
+    '.4dddddd..',
+    '..dd55dd..',
+    '.dd5555dd.',
+    'ddddddddd.',
+    '..dd55dd..',
+    '.4dddddd..',
+    '..444444..',
+    '..........',
+    '..........',
+  ],
+  [
+    '...4444...',
+    '.4dddddd..',
+    '.d5555dd..',
+    '.d555555d.',
+    '.dddddddd.',
+    '.d5555dd..',
+    '.4dddddd..',
+    '..444444..',
+    '..........',
+    '..........',
+  ],
+];
+const bouncy = mk(10, 10, bouncyFrames);
+
+// Stink Aura: a wavy stink cloud puff
+const stinkauraFrames: string[][] = [
+  [
+    '....44....',
+    '...4dd4...',
+    '..dddddd..',
+    '..dd55dd..',
+    '..dd55dd..',
+    '..dddddd..',
+    '...4dd4...',
+    '....44....',
+    '..........',
+    '..........',
+  ],
+];
+const stinkaura = mk(10, 10, stinkauraFrames);
+
+// Fart Bomb: a round bomb with a fuse
+const fartbombFrames: string[][] = [
+  [
+    '....4.....',
+    '...444....',
+    '...4ddd...',
+    '..ddddd...',
+    '..ddddd...',
+    '..ddddd...',
+    '...4ddd...',
+    '...444....',
+    '..........',
+    '..........',
+  ],
+];
+const fartbomb = mk(10, 10, fartbombFrames);
+
+// Orbiting Turd: the classic swirl, 2 frames
+const turdFrames: string[][] = [
+  [
+    '..444444..',
+    '.4dddddd..',
+    '.d5555dd..',
+    '.d5555dd..',
+    '.4dddddd..',
+    '..dd44dd..',
+    '.4dddddd..',
+    '..444444..',
+    '..........',
+    '..........',
+  ],
+  [
+    '..444444..',
+    '.4dddddd..',
+    '.d5555dd..',
+    '.d5555dd..',
+    '.4dddddd..',
+    '..dd44dd..',
+    '.4dddddd..',
+    '..444444..',
+    '..........',
+    '..........',
+  ],
+];
+const turd = mk(10, 10, turdFrames);
+
+// Superball Splat: a fast elastic ball
+const superballFrames: string[][] = [
+  [
+    '...4444...',
+    '..4cccc4..',
+    '..c5555c..',
+    '..c5555c..',
+    '.ccccccc..',
+    '..c5555c..',
+    '..c5555c..',
+    '..4cccc4..',
+    '...4444...',
+    '..........',
+  ],
+];
+const superball = mk(10, 10, superballFrames);
+
 export const SPRITES: Record<string, Sprite> = {
   crouton, croutonHit, bubble, bubbleHit, gem, bolt,
   plop, cracker, boss, bossHit, chest,
@@ -617,6 +1083,9 @@ export const SPRITES: Record<string, Sprite> = {
   sponge, spongeHit, colonel, colonelHit, constipation, constipationHit,
   express, expressHit, sphincter, sphincterHit, flush, flushHit,
   goldbag, donut,
+  bouncy, stinkaura, fartbomb, turd,
+  stickyplop, halo, slakelake, superball, ghost, bigburp, moon,
+  hotdog, avocado,
 };
 
 // ---------- 8x8 bitmap font ----------

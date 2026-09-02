@@ -92,7 +92,7 @@ ok((kindProbe2[1020] || '').includes('sponge') && !(kindProbe2[720] || '').inclu
 // B2: wave bursts fire on schedule
 const waveProbe = await page.evaluate(() => {
   const c = window.__cap;
-  c.restart(77); c.freeze(); c.set('mode', 'play');
+  c.restartPlay(77); c.freeze();
   const before = c.state().enemies;
   // waveCd starts at 60 → first burst at 1:00
   for (let i = 0; i < 70; i++) { c.step(); }
@@ -108,7 +108,7 @@ const bossSched = await page.evaluate(() => {
   for (let bi = 0; bi < 5; bi++) {
     const sched = c.bossSchedule();
     const ev = sched[bi];
-    c.restart(999); c.set('mode', 'play');
+    c.restartPlay(999);
     c.set('bossIdx', bi); // past earlier bosses (killed or not — schedule is index-based)
     c.set('time', ev.t - 1);
     let seen = null;
@@ -123,7 +123,7 @@ ok(bossSched[0].includes('THE FIRST WIND') && bossSched[1].includes('COLONEL C')
 // B4: Spasm Wall — mechanics: spawns, closes in, breakable (schedule itself is B3)
 const wallProbe = await page.evaluate(() => {
   const c = window.__cap;
-  c.restart(1212); c.set('mode', 'play'); c.set('time', 899);
+  c.restartPlay(1212); c.set('time', 899);
   c.giveWeapon('crackerring', 8); // aura will chew the wall
   c.giveWeapon('fartwhip', 8);
   c.givePassive('quick', 2);
@@ -145,7 +145,7 @@ ok(wallProbe.wallBroken, 'Spasm Wall: breakable by weapons (wall dissolves)');
 // B5: stage items spawn + collect
 const itemProbe = await page.evaluate(() => {
   const c = window.__cap;
-  c.restart(333); c.set('mode', 'play'); c.set('time', 149);
+  c.restartPlay(333); c.set('time', 149);
   let seen = false, taken = 0;
   for (let i = 0; i < 600; i++) {
     c.step();
@@ -170,7 +170,7 @@ ok(itemProbe.seen && itemProbe.taken > 0, 'stage items: spawn + walk-over collec
 // B6a: killed → win + gold
 const flushKill = await page.evaluate(() => {
   const c = window.__cap;
-  c.restart(1212); c.set('mode', 'play');
+  c.restartPlay(1212);
   c.giveWeapon('superfart', 8); // big gun
   c.giveWeapon('crackerring', 8);
   c.givePassive('meats', 5);
@@ -196,7 +196,7 @@ ok(flushKill.gold >= 500, 'Final Flush: victory pays bonus gold (500)');
 // B6b: touch → flushed ending
 const flushTouch = await page.evaluate(() => {
   const c = window.__cap;
-  c.restart(1212); c.set('mode', 'play');
+  c.restartPlay(1212);
   c.spawnFlush();
   c.setFlushHp(10000000); // unkillable in this probe
   c.set('hp', 100000);
@@ -229,12 +229,6 @@ await page.evaluate(() => {
       if (s.mode !== 'play') return;
       const W = s.world.w, H = s.world.h;
       const near = cap.enemies(16).filter((e) => e.d < 100);
-      let wx = 0, wz = 0, wsum = 0;
-      for (const e of near) { const w = 1 - e.d / 100; wx += e.x * w; wz += e.z * w; wsum += w; }
-      if (s.boss) {
-        const bd = Math.hypot(s.boss.x - s.x, s.boss.z - s.z);
-        if (bd < 150) { const w = 3 * (1 - bd / 150); wx += s.boss.x * w; wz += s.boss.z * w; wsum += w; }
-      }
       // FINAL FLUSH: kill it — standoff band 45–90u, strafe
       if (s.flush) {
         const fd = Math.hypot(s.flush.x - s.x, s.flush.z - s.z);
@@ -247,29 +241,68 @@ await page.evaluate(() => {
             (sz > 0.3 && s.z > H - 120) || (sz < -0.3 && s.z < 120)) { sx = -sx; sz = -sz; }
         cap.move(sx, sz); return;
       }
-      if (wsum < 0.15) {
+      // BOSS within 100 → perpendicular dash-dodge (the express dash locks its
+      // direction; sideways beats it). Farther bosses fold into the flee below.
+      if (s.boss) {
+        const bd = Math.hypot(s.boss.x - s.x, s.boss.z - s.z);
+        if (bd < 100) {
+          const bx = s.x - s.boss.x, bz = s.z - s.boss.z;
+          const d = Math.hypot(bx, bz) || 1;
+          let dx2 = -bz / d, dz2 = bx / d;
+          if (dx2 > 0 && s.x > W - 150) { dx2 = -dx2; dz2 = -dz2; }
+          if (dz2 > 0 && s.z > H - 150) { dx2 = -dx2; dz2 = -dz2; }
+          cap.move(dx2 + (bx / d) * 0.3, dz2 + (bz / d) * 0.3);
+          return;
+        }
+      }
+      // swarm centroid (proximity-weighted) + the boss folded in at 6×
+      let wx = 0, wz = 0, wsum = 0;
+      for (const e of near) { const w = 1 - e.d / 100; wx += e.x * w; wz += e.z * w; wsum += w; }
+      if (s.boss) {
+        const bd = Math.hypot(s.boss.x - s.x, s.boss.z - s.z);
+        if (bd < 150) { const w = 6 * (1 - bd / 150); wx += s.boss.x * w; wz += s.boss.z * w; wsum += w; }
+      }
+      // FLEE: any meaningful swarm → break through the LEAST-DENSE octant,
+      // biased away from the centroid. (Strafing in a circle gets surrounded;
+      // the gap-break is how you survive a director swarm.)
+      if (wsum > 1.0) {
+        const away = Math.atan2(s.z - wz, s.x - wx);
+        const walls = cap.wallList();
+        let bestA = away, bestScore = -1e9;
+        for (let k = 0; k < 8; k++) {
+          const a = (k / 8) * Math.PI * 2;
+          let dens = 0;
+          for (const e of near) {
+            const ea = Math.atan2(e.z - s.z, e.x - s.x);
+            const diff = Math.abs(Math.atan2(Math.sin(ea - a), Math.cos(ea - a)));
+            dens += Math.exp(-diff * 1.5) * (1 - e.d / 100 + 0.2);
+          }
+          for (const w of walls) {
+            if (w.d > 120) continue;
+            const wa = Math.atan2(w.z - s.z, w.x - s.x);
+            const diff = Math.abs(Math.atan2(Math.sin(wa - a), Math.cos(wa - a)));
+            dens += Math.exp(-diff * 1.5) * 0.8;
+          }
+          const align = Math.abs(Math.atan2(Math.sin(away - a), Math.cos(away - a)));
+          const score = (Math.PI - align) - dens * 0.9;
+          if (score > bestScore) { bestScore = score; bestA = a; }
+        }
+        cap.move(Math.cos(bestA), Math.sin(bestA));
+        return;
+      }
+      // light swarm: grab gems (XP = levels = DPS)
+      if (wsum > 0.05) {
         const gem = cap.nearestGem();
-        if (gem && gem.d < 90 && gem.d > 8) {
+        if (gem && gem.d < 70 && gem.d > 8) {
           const dx = gem.x - s.x, dz = gem.z - s.z;
           const d = Math.hypot(dx, dz) || 1;
           cap.move(dx / d, dz / d); return;
         }
-        cap.move(0, 0); return;
       }
-      const cx = wx / wsum, cz = wz / wsum;
+      // empty-ish field: hold the kite band (hunt when far, flee when close)
+      const cx = wsum ? wx / wsum : s.x, cz = wsum ? wz / wsum : s.z;
       let dx = s.x - cx, dz = s.z - cz;
       const d = Math.hypot(dx, dz) || 1;
-      if (wsum > 2.2) {
-        const corners = [[0, 0], [W, 0], [0, H], [W, H]];
-        let best = null, bd = -1;
-        for (const [ccx, ccz] of corners) {
-          const cd = Math.hypot(ccx - cx, ccz - cz);
-          if (cd > bd) { bd = cd; best = [ccx, ccz]; }
-        }
-        const tdx = best[0] - s.x, tdz = best[1] - s.z;
-        const td = Math.hypot(tdx, tdz) || 1;
-        cap.move(tdx / td, tdz / td); return;
-      }
       if (d > 70) { cap.move(dx / d, dz / d); return; }
       if (d < 30) { cap.move(-dx / d, -dz / d); return; }
       let sx = -dz / d, sz = dx / d;

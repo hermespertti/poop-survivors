@@ -91,7 +91,7 @@ await page.evaluate(() => window.__cap.unfreeze());
 
 // B3: passive stat multipliers — the GDD's numbers, exactly
 async function statOf(fn) { return page.evaluate(fn); }
-let r = await statOf(() => { const c = window.__cap; c.restart(777); c.set('mode', 'play'); return c.state(); });
+let r = await statOf(() => { const c = window.__cap; c.restartPlay(777); return c.state(); });
 ok(r.stats.dmgMult === 1 && r.stats.cdMult === 1 && r.stats.speedMult === 1 && r.stats.xpMult === 1, 'passives: multipliers start at 1.0');
 r = await statOf(() => { const c = window.__cap; c.restart(777); c.givePassive('meats', 3); return c.state(); });
 ok(Math.abs(r.stats.dmgMult - 1.3) < 1e-9, `meats x3 → +30% damage (got ${r.stats.dmgMult})`);
@@ -151,7 +151,7 @@ await page.evaluate(() => window.__cap.unfreeze());
 // B5: boss 1 (The First Wind) spawns on schedule — M3 moved it to 5:00
 r = await statOf(() => {
   const c = window.__cap;
-  c.restart(999); c.set('mode', 'play'); c.set('time', 299.5);
+  c.restartPlay(999); c.set('time', 299.5);
   return c.state();
 });
 ok(!r.boss, 'boss: not yet present at 4:59.5');
@@ -166,7 +166,7 @@ ok(bossSeen, 'boss: The First Wind spawns at 5:00 (M3 schedule)');
 // B6: evolution — whip 8 + quick + chest = SUPER FART
 r = await statOf(() => {
   const c = window.__cap;
-  c.restart(1212); c.set('mode', 'play');
+  c.restartPlay(1212);
   c.giveWeapon('fartwhip', 8);
   c.givePassive('quick', 1);
   return { ready: c.evoReady() };
@@ -174,7 +174,7 @@ r = await statOf(() => {
 ok(r.ready === true, 'evolution: whip 8 + Quick Hands → evoReady');
 await page.evaluate(() => {
   const c = window.__cap;
-  c.restart(1212); c.set('mode', 'play');
+  c.restartPlay(1212);
   c.giveWeapon('fartwhip', 8);
   c.givePassive('quick', 1);
   c.spawnBoss();
