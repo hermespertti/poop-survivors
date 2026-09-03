@@ -1,7 +1,7 @@
 // M4 SOAK — content completion.
 // Part A: M1-M3 regression (XP curve, determinism, director schedule).
-// Part B: THE CONTENT — all 9 weapons fire, all 10 passives scale, ALL 9
-// evolutions resolve (each base maxed + its passive + chest), characters
+// Part B: THE CONTENT — all 12 base weapons fire, all 13 passives scale, ALL
+// 12 evolutions resolve (each base maxed + its passive + chest), characters
 // start with their weapon + bonus, unlock math verified, stage 2 variant
 // works, meta banks gold.
 // Part C: per-character soak — each character plays a full run (batched),
@@ -48,8 +48,8 @@ ok(a === c2, 'determinism: identical seed+input → identical trajectory (regres
 await page.evaluate(() => window.__cap.unfreeze());
 
 // ============ PART B: the content ============
-// B1: all 8 base weapons fire
-for (const id of ['fartwhip', 'plopcannon', 'crackerring', 'puddle', 'bouncy', 'stinkaura', 'fartbomb', 'turd', 'spritz']) {
+// B1: all 12 base weapons fire
+for (const id of ['fartwhip', 'plopcannon', 'crackerring', 'puddle', 'bouncy', 'stinkaura', 'fartbomb', 'turd', 'spritz', 'mine', 'chainfart', 'gnat']) {
   const r = await page.evaluate((wid) => {
     const c = window.__cap;
     c.restartPlay(555); c.freeze();
@@ -109,6 +109,9 @@ const EVO_PAIRS = [
   ['fartbomb', 'breakfast', 'bigburp'],
   ['turd', 'slippers', 'moon'],
   ['spritz', 'tp', 'gunkfountain'], // M7: the 9th line
+  ['mine', 'fuse', 'minelord'], // M8: the 10th
+  ['chainfart', 'chain', 'chainstorm'], // M8: the 11th
+  ['gnat', 'winged', 'supergnat'], // M8: the 12th
 ];
 for (const [base, passive, to] of EVO_PAIRS) {
   const r = await page.evaluate((ar) => {
@@ -304,20 +307,35 @@ await page.evaluate(() => {
       const o = s.options;
       let pick = -1;
       if (s.hp < 30) pick = o.findIndex((x) => x.id === 'hp');
-      // STRICT evolution path: start weapon max → its evolution passive →
-      // whip-max (crouton's main DPS) → ring (defense) → diversify.
-      // The evo passive must land BEFORE whip-max: a chest resolves the evo
-      // only if base is maxed AND the passive is held — for spritz (plunger)
-      // that passive is TP Crown, and grabbing whip levels first lets the
-      // first chest (5:00 boss) fall through to gold+heal.
+      // STRICT evolution path (M8 deterministic): the evo passive is
+      // PRE-GRANTED at the head start (sw:8 + evoPassive:1 = evoReady from
+      // t=0), so the FIRST chest (5:00 boss) must resolve the character's
+      // OWN line. The hazard is a competing pair: the ring-8 head start
+      // means any 'widestink' pick also makes crackerring→halo ready, and
+      // evoReady() returns THAT first (crackerring sits earlier in table
+      // order than puddle/spritz). So: max the line, diversify with
+      // WEAPONS only, and no new passive until the own evo has resolved.
       const sw = window.__startWeapon;
       if (pick < 0 && sw && window.__evoPassive && !s.passives[window.__evoPassive]) pick = o.findIndex((x) => x.id === window.__evoPassive);
       if (pick < 0 && sw && sw !== 'crackerring') pick = o.findIndex((x) => x.id === sw && x.lvl < 8);
       if (pick < 0 && sw !== 'fartwhip') pick = o.findIndex((x) => x.id === 'fartwhip' && x.lvl < 8);
-      if (pick < 0) pick = o.findIndex((x) => x.id === 'crackerring'); // fresh OR upgrade (head start grants ring 8)
-      if (pick < 0) pick = o.findIndex((x) => x.kind === 'passive' && x.lvl === 1);
+      if (pick < 0) pick = o.findIndex((x) => x.id === 'crackerring' && x.lvl < 8);
       if (pick < 0) pick = o.findIndex((x) => x.kind === 'weapon' && !s.weapons[x.id]);
-      if (pick < 0) pick = 0;
+      if (pick < 0) pick = o.findIndex((x) => x.kind === 'weapon'); // any owned-weapon upgrade — always safe (a pair needs a passive)
+      if (pick < 0 && !s.evolved) {
+        // No weapon to take. Take a passive ONLY if it can't ARM A COMPETING
+        // EVO PAIR (pre-evolution). The head start maxes the ring (and the
+        // cascade maxes the start line + whip), so any evo-key passive whose
+        // base is maxed steals the chest — evoReady() resolves in table order,
+        // and fartwhip(0)/crackerring(2) sit before the later lines (spritz=8).
+        // The own evo passive is always safe: its pair is already armed and is
+        // the one we want the chest to resolve.
+        const EVOBASE = { widestink: 'crackerring', meats: 'puddle', gloves: 'bouncy', lucky: 'stinkaura', breakfast: 'fartbomb', slippers: 'turd', tp: 'spritz', fuse: 'mine', chain: 'chainfart', winged: 'gnat', quick: 'fartwhip', sticky: 'plopcannon' };
+        pick = o.findIndex((x) => x.kind === 'passive' && (x.id === window.__evoPassive || !EVOBASE[x.id] || EVOBASE[x.id] === sw || !(s.weapons[EVOBASE[x.id]] || 0) >= 8));
+      }
+      if (pick < 0) pick = o.findIndex((x) => x.id === 'hp' || x.id === 'gold'); // heal/loot safe — arms no pair
+      if (pick < 0 && s.evolved) pick = o.findIndex((x) => x.kind === 'passive');
+      if (pick < 0) pick = 0; // last resort: anything
       cap.pick(pick);
     },
   };

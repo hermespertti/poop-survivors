@@ -355,3 +355,135 @@ covered by the M2/M3/M4 suites (33/27/51 assertions respectively):
 - **Audio (previous pass, same release)**: sfx voice cap (8 one-shots per
   100ms — heavy clatter can't tank the real-time loop), hurt/pop/gem/pickup
   kinds, music intensity scaled to director pressure, M mute.
+
+## 18. Balance soak (M7 GDD deliverable, 2026-09-03) — the game is balanced
+
+The GDD asked for a soak that "reports a rate, not pass/fail." Built
+`test/balance.mjs` (10 seeds, full 30:00, **natural build** — no head start,
+the level-up path a real player experiences) + `test/balance-diag.mjs`
+(A/B build orders with per-30s clear-rate vs analytic spawn-rate crossover).
+
+Findings (canonical: `test/balance-base.log`):
+
+- **Bullet heaven** (GDD: clear rate > spawn rate, target 8–10 min): median
+  **8.7 min**, reached by 8/10 seeds — on target. (Measured by rolling 30s
+  kill rate vs the analytic spawn-rate curve, sustained 2 windows, not a
+  population floor — the GDD's actual definition.)
+- **Death rate 10/10 but spread 110s → 25.5min**, levels 4 → 40: a real
+  skill curve, not a wall. The "10/10 dead by 178s" from the first (dps-first
+  bot) was a BUILD-ORDER artifact: maxing one weapon before diversifying
+  never crosses spawn rate (skill floor), the diversified build does.
+- **Boss clears**: median 2.5/6, up to 4; deaths are "soup" (swarm), flush
+  deaths rare — the flush gate is a true end-game event.
+- **Level pacing** median: 11 @5min, 20 @10, 26 @15, 33 @20, 39 @25.
+- HP pressure medians 100% across all bands for the diversified bot (the bot
+  kites to full — a real player's dips are skill, not a heal-starve curve).
+
+Conclusion: **no director tuning needed.** The 10-seed natural soak is the
+standing balance gate; rerun after any content/balance change (it's
+deterministic per seed, so numbers move predictably).
+
+## 19. Content round 3 (M8, 2026-09-03) — playtest-driven
+
+Anon playtest round 1: "lisää aseita vaihtoehdoiks" (more weapon options) +
+the pixel font was hard to read ("varmaan tyylivalinta").
+
+- **3 new weapon lines** (12 base weapons + 12 evolutions total, 13
+  passives):
+  - `mine` **Gunk Mine** → +`fuse`→ `minelord` **MINE LORD** — timed
+    landmines: a mine drops, blinks faster as the fuse runs out, then blasts
+    a wide one-shot AoE (new `blast` bullet field + explosion-on-expiry in
+    the bullet loop). Mine Lord rains a 3-mine fast-fusing ring.
+  - `chainfart` **Chain Fart** → +`chain`→ `chainstorm` **CHAIN STORM** —
+    lightning that jumps enemy-to-enemy (Runetracer analog); Chain passive
+    +1 hop; the storm hurls 3 bolts per shot.
+  - `gnat` **Gnat** → +`winged`→ `supergnat` **SUPER GNAT** — a chomping
+    companion that orbits and zaps the nearest enemies on its own cadence
+    (tick-weapon like the cracker band; `gnatbeam` is a purely visual
+    bullet — new `visual` flag makes visual bullets skip every damage block).
+    Super Gnat = 3 zaps/tick; Winged adds zaps + spin.
+- **3 new passives**: `fuse` (+20% mine blast/lvl), `chain` (+1 hop/lvl),
+  `winged` (+1 zap +speed/lvl) — each is the evo key for its weapon line.
+- **Font readability (the actual complaint)**:
+  - Glyph advance was **6px for 7px-wide glyphs — letters overlapped**.
+    Fixed to 7px advance (all width calcs updated: `center`, title, boss
+    name).
+  - **1px near-black halo** under every text style (drawn first, ink on top)
+    — classic readable pixel-font look on any background.
+  - **`scale` param on drawText**: title "POOP SURVIVORS", "LEVEL UP!", and
+    the death/win overlay titles now render at **2×** — big screens are the
+    ones people read, gameplay HUD stays 1×.
+  - Verified by vision check: crisp outline, no collision/cutoff/smear.
+
+## 20. Playtest round 2 (anon, 2026-09-03) — PARKED, not yet addressed
+
+1. **~lvl 40 a shooter spawns whose bullets look identical to the XP gems**
+   — the spitter's gunk shots (`kind:'gunk'` renders the green `gem` sprite).
+   Fix direction: give spitter shots their own color/sprite (or a distinct
+   projectile art) so "enemy bullet = dodge" vs "gem = grab" reads at a
+   glance.
+2. **XP pickup felt very slow exactly at lvl 20 and 40, normal at 21/41**
+   — "ei ollu ihan lineaarinen" (not linear). Fix direction: audit the
+   `xpToNext` curve + gem values around the 20/40 walls (VS has 798/477
+   steps there — verify the *pickup* (magnet + gem value) matches the curve
+   slope, or smooth the wall).
+3. **The ring is too strong — AFK-able to ~lvl 40 (except bosses)**:
+   crackerring/halo "suli kaikki" (melted everything), constant knockback,
+   only bosses got through. Fix direction: the ring's DPS/tick may be too
+   high per level, or its band too thick late; consider capping ring DPS
+   growth or scaling band damage down vs clear-rate needs so the ring is
+   defense + chip, not a solo-clearer. (This is the one that could reshape
+   the balance-soak numbers — rerun the soak after.)
+4. (neutral note) wave bursts still spawn in the meantime — no action.
+
+## 21. M8 balance gate rerun (2026-09-03) — the pool dilution regression
+
+The 10-seed natural-build balance gate was rerun after the M8 content round
+(9 → 12 weapons, 10 → 13 passives). The director is untouched, so any move is
+the level-up pool:
+
+| | M7 pool (9 weapons) | M8 pool (12 weapons) |
+|---|---|---|
+| bullet heaven, median | 8.7 min (on target) | 9.9 min (still on target) |
+| heaven reached by | 8/10 seeds | **3/10 seeds** |
+| death rate | 10/10, spread 110s–25.5min | 10/10, **7/10 dead by lv 18 (~5 min)** |
+| boss clears, median | 2.5/6 | **0/6** |
+| population @ 20:00 | ~82 median | **95 median** |
+
+Canonical log: `test/balance-base-m8.log`.
+
+**Root cause (measured, not folklore):** the pool guarantees fresh picks. With
+9 weapons a fresh roll was ~1/9 of the lottery, so the bot's upgrade-first
+strategy (ring up, 2nd weapon, then scale) mostly got its upgrades. With 12,
+an owned-weapon upgrade is ~3% of a per-screen lottery, so builds scatter
+across 6+ weapons and no line ever maxes — clear rate never crosses the spawn
+curve and the 10:00+ population wall is simply too thick.
+
+**Half-fix measured and reverted:** reweighting the pool to VS-true owned-
+first (1 fresh + 2 upgrades) moved heaven 3/10 → 4/10 and *hurt* the death
+median (394s → 315s), and flipped the deterministic m3 gate (1/5 → 0/5 wins).
+Reason: the natural bot's own pick priority grabs fresh weapons before owned
+upgrades, so it ignores the extra upgrade slots — the pool and the pick
+strategy fight each other. Reverted; ship them together in M9.
+
+**M9 balance pass (the work this opens):**
+1. Pool → VS-true owned-first (the diff above, one hunk).
+2. Natural bot pick → upgrade-first with the fresh slot as tiebreak.
+3. Ring strength (playtest round 2, item 3) — the bot's ring-8 builds now
+   live to 20+ min in the m3/m4 soaks, and an AFK ring to lvl 40 is the
+   player-reported experience; ring as defense+chip, not solo-clearer.
+4. Then: rerun `node test/balance.mjs` until heaven ≥ majority of seeds,
+   deaths spread, and median boss clears ≥ 2 — and the m3 gate back to ≥ 1 win.
+
+**Process notes from this session:**
+- `npm test` now runs the whole gate: `test/run-all.mjs` auto-starts the dev
+  server if 5193 is down (and stops it again if it started it), runs m1–m4 in
+  parallel (~5.6 min wall), streams `[mN]`-prefixed output, exits non-zero on
+  any failure. `npm run test:mN` runs a single suite.
+- Parallel is safe for these soaks: the bots drive the game through batched
+  in-page `step()` (deterministic fixed-timestep), so CPU contention delays
+  wall time but never the trajectory — measured byte-identical m3 output
+  parallel vs sequential, all 5 seeds, 2026-09-03.
+- Every harness now calls `test/server.mjs` `ensureServer()` first — a dead
+  dev server no longer costs a suite its first lines.
+

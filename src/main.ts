@@ -63,6 +63,9 @@ const WEAPONS: Record<string, {
   fartbomb:   { name: 'Fart Bomb',    desc: 'Big explosion at a random enemy',   maxLvl: 8, baseDmg: 35, baseCd: 3.5, dmgPerLvl: 10, cdPerLvl: -0.12, evolved: false, evoWith: 'breakfast', evolvesTo: 'bigburp' },
   turd:       { name: 'Orbiting Turd', desc: 'Heavy orbiting damage zone, slow', maxLvl: 8, baseDmg: 14, baseCd: 1.0, dmgPerLvl: 6, cdPerLvl: -0.03, evolved: false, evoWith: 'slippers', evolvesTo: 'moon' },
   spritz:     { name: 'Gunk Spritz',  desc: 'Short-range gunk cone',             maxLvl: 8, baseDmg: 9,  baseCd: 1.5, dmgPerLvl: 4, cdPerLvl: -0.03, evolved: false, evoWith: 'tp', evolvesTo: 'gunkfountain' },
+  mine:       { name: 'Gunk Mine',    desc: 'Drops timed mines that blow up',    maxLvl: 8, baseDmg: 26, baseCd: 2.6, dmgPerLvl: 8, cdPerLvl: -0.08, evolved: false, evoWith: 'fuse', evolvesTo: 'minelord' },
+  chainfart:  { name: 'Chain Fart',   desc: 'Zap that chains between enemies',   maxLvl: 8, baseDmg: 14, baseCd: 1.1, dmgPerLvl: 5, cdPerLvl: -0.03, evolved: false, evoWith: 'chain', evolvesTo: 'chainstorm' },
+  gnat:       { name: 'Gnat',         desc: 'A chomping buddy that zaps for you',maxLvl: 8, baseDmg: 10, baseCd: 0.9, dmgPerLvl: 4, cdPerLvl: -0.04, evolved: false, evoWith: 'winged', evolvesTo: 'supergnat' },
   // ---------- evolved weapons (chest-only, evolved: true) ----------
   superfart:   { name: 'SUPER FART',     desc: 'Wide devastating piercing beam', maxLvl: 8, baseDmg: 40, baseCd: 1.1, dmgPerLvl: 6, cdPerLvl: -0.02, evolved: true },
   stickyplop:  { name: 'Sticky Plop',    desc: 'Bigger blob, lingers, re-explodes', maxLvl: 8, baseDmg: 30, baseCd: 2.2, dmgPerLvl: 10, cdPerLvl: -0.08, evolved: true },
@@ -73,6 +76,9 @@ const WEAPONS: Record<string, {
   bigburp:     { name: 'BIG BURP',       desc: 'Massive multi-target AOE', maxLvl: 8, baseDmg: 55, baseCd: 2.8, dmgPerLvl: 14, cdPerLvl: -0.1, evolved: true },
   moon:        { name: 'MOON OF THE BOWEL', desc: 'A full moon of doom circles you', maxLvl: 8, baseDmg: 24, baseCd: 0.8, dmgPerLvl: 10, cdPerLvl: -0.02, evolved: true },
   gunkfountain:{ name: 'GUNK FOUNTAIN',  desc: 'Radial gunk geyser + splash zone', maxLvl: 8, baseDmg: 12, baseCd: 1.2, dmgPerLvl: 5, cdPerLvl: -0.03, evolved: true },
+  minelord:    { name: 'MINE LORD',      desc: 'Rains a field of fast-fusing mines', maxLvl: 8, baseDmg: 40, baseCd: 1.8, dmgPerLvl: 12, cdPerLvl: -0.05, evolved: true },
+  chainstorm:  { name: 'CHAIN STORM',    desc: 'Lightning storms over the field', maxLvl: 8, baseDmg: 22, baseCd: 0.7, dmgPerLvl: 8, cdPerLvl: -0.02, evolved: true },
+  supergnat:   { name: 'SUPER GNAT',     desc: 'A furious swarm that zaps nonstop', maxLvl: 8, baseDmg: 16, baseCd: 0.5, dmgPerLvl: 6, cdPerLvl: -0.02, evolved: true },
 };
 const PASSIVES: Record<string, { name: string; desc: string; maxLvl: number }> = {
   meats:      { name: 'Meat Shakes',    desc: '+10% weapon damage / lv', maxLvl: 5 },
@@ -85,6 +91,9 @@ const PASSIVES: Record<string, { name: string; desc: string; maxLvl: number }> =
   sticky:     { name: 'Sticky',         desc: '+10% duration / lv', maxLvl: 5 },
   lucky:      { name: 'Lucky Charms',   desc: '+10% luck / lv (evolution unlocks)', maxLvl: 5 },
   goldrush:   { name: 'Gold Rush',      desc: '+15% gold / lv (M7)', maxLvl: 5 },
+  fuse:       { name: 'Fuse',           desc: '+20% mine blast radius / lv (M8)', maxLvl: 5 },
+  chain:      { name: 'Chain',          desc: '+1 chain hop / lv (M8)', maxLvl: 5 },
+  winged:     { name: 'Winged',         desc: '+1 gnat zap +speed / lv (M8)', maxLvl: 5 },
 };
 
 function wDmg(id: string, lvl: number): number { return (WEAPONS[id].baseDmg + WEAPONS[id].dmgPerLvl * (lvl - 1)) * G.stats.dmgMult; }
@@ -143,7 +152,7 @@ function enemyHp(kind: string): number {
   return base * (1 + G.time / 90);
 }
 type Gem = { x: number; z: number; val: number; vx: number; vz: number; pulled: boolean };
-type Bullet = { x: number; z: number; vx: number; vz: number; life: number; dmg: number; ang: number; hitR: number; kind: string; bounces?: number; bounceSpeed?: number; linger?: number; hitIds?: number[]; enemy?: boolean };
+type Bullet = { x: number; z: number; vx: number; vz: number; life: number; dmg: number; ang: number; hitR: number; kind: string; bounces?: number; bounceSpeed?: number; linger?: number; hitIds?: number[]; enemy?: boolean; visual?: boolean; blast?: number };
 type Zone = { x: number; z: number; r: number; life: number; tick: number; dmg: number };
 type DmgNum = { x: number; z: number; vy: number; t: number; txt: string; crit: boolean };
 type Mode = 'title' | 'play' | 'levelup' | 'dead' | 'win';
@@ -323,6 +332,13 @@ function buildOptions(): ItemOpt[] {
   // VS: show 3 options. Guarantee at least one FRESH pick (a weapon/passive the
   // bot doesn't own yet) so a build can actually diversify — a pure owned-upgrade
   // pool lets a single weapon snowball and starve the player of new tools.
+  // NOTE (M8, 2026-09-03): this 2-fresh + 1-upgrade split was tuned for 9
+  // weapons. At 12, an owned-weapon upgrade is ~3% of the per-screen lottery,
+  // so natural builds scatter across 6+ weapons — the M8 balance gate dropped
+  // bullet-heaven from 8/10 to 3/10 seeds (see GDD §18/§21). The VS-true fix is
+  // to weight owned upgrades up, but that only pays off together with the
+  // natural-bot pick priority (which currently grabs fresh weapons first) —
+  // ship both together in the M9 balance pass, not the pool alone.
   const shuf = (a: ItemOpt[]) => { for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(G.rng() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; };
   const ownedUp = opts.filter((o) => (o.kind === 'weapon' && G.weapons[o.id]) || (o.kind === 'passive' && G.passives[o.id]));
   const fresh = opts.filter((o) => !ownedUp.includes(o));
@@ -493,6 +509,36 @@ function fireWeapons(): void {
       }
       continue;
     }
+    if (id === 'gnat' || id === 'supergnat') {
+      // Gnat (M8): a chomping companion orbiting you that zaps enemies on its
+      // own cadence. SUPER GNAT: multiple zaps per tick. Winged passive adds
+      // zaps + spin. Damage applies on the tick (like the cracker band), the
+      // beam bullet is purely visual.
+      const spd = 3.0 + 0.15 * (G.passives.winged || 0);
+      w.ang += spd * DT;
+      const r = 24 + 2 * w.lvl;
+      gnatPos = { x: p.x + Math.cos(w.ang) * r, z: p.z + Math.sin(w.ang) * r };
+      if (w.cd <= 0) {
+        w.cd = wCd(id, w.lvl);
+        G.stats.shots[id] = (G.stats.shots[id] || 0) + 1;
+        const zaps = (id === 'supergnat' ? 3 : 1) + (G.passives.winged || 0);
+        const taken: Enemy[] = [];
+        for (let k = 0; k < zaps; k++) {
+          let t: Enemy | null = null, bd = 260;
+          for (const e of G.enemies) {
+            if (taken.includes(e) || e.hp <= 0) continue;
+            const d = Math.hypot(e.x - p.x, e.z - p.z);
+            if (d < bd) { bd = d; t = e; }
+          }
+          if (!t) break;
+          taken.push(t);
+          G.bullets.push({ x: gnatPos.x, z: gnatPos.z, vx: (t.x - gnatPos.x) / 0.1, vz: (t.z - gnatPos.z) / 0.1, life: 0.1, dmg: 0, ang: 0, hitR: 3, kind: 'gnatbeam', visual: true });
+          damageEnemy(t, wDmg(id, w.lvl), gnatPos.x, gnatPos.z);
+        }
+        sfx('shoot');
+      }
+      continue;
+    }
     if (w.cd > 0) continue;
     const n = nearestEnemy(240);
     if (!n) continue;
@@ -542,6 +588,43 @@ function fireWeapons(): void {
         G.bullets.push({ x: p.x, z: p.z, vx: Math.cos(a) * 200, vz: Math.sin(a) * 200, life: wDuration(0.7), dmg: wDmg('gunkfountain', w.lvl), ang: a, hitR: wArea(5), kind: 'gunk' });
       }
       G.zones.push({ x: p.x, z: p.z, r: wArea(40), life: wDuration(0.8), tick: 0.3, dmg: wDmg('gunkfountain', w.lvl) * 0.5 });
+    } else if (id === 'mine' || id === 'minelord') {
+      // M8: Gunk Mine drops a timed mine at the nearest enemy (landmine: it
+      // sits still, then blasts a wide radius). MINE LORD rains a volley of
+      // fast-fusing mines in a ring. Fuse scales with duration passive.
+      const count = id === 'minelord' ? 3 : 1;
+      const fuse = (id === 'minelord' ? 0.8 : 1.2) * wDuration(1);
+      for (let k = 0; k < count; k++) {
+        let tx: number, tz: number;
+        if (k === 0 && n && id === 'mine') { tx = n.e.x + (G.rng() - 0.5) * 24; tz = n.e.z + (G.rng() - 0.5) * 24; }
+        else { const a = G.rng() * Math.PI * 2, d = 28 + G.rng() * (id === 'minelord' ? 85 : 45); tx = p.x + Math.cos(a) * d; tz = p.z + Math.sin(a) * d; }
+        tx = Math.max(8, Math.min(WORLD_W - 8, tx)); tz = Math.max(8, Math.min(WORLD_H - 8, tz));
+        // blast radius: base per weapon, +20%/lv from the Fuse passive, area passive on top
+        const blast = (id === 'minelord' ? 42 : 30) * (1 + 0.20 * (G.passives.fuse || 0)) * G.stats.areaMult;
+        G.bullets.push({ x: tx, z: tz, vx: 0, vz: 0, life: fuse, dmg: wDmg(id, w.lvl), ang: 0, hitR: 3, kind: 'mine', blast });
+      }
+    } else if (id === 'chainfart' || id === 'chainstorm') {
+      // M8: Chain Fart — lightning jumps enemy-to-enemy (VS Runetracer-style).
+      // CHAIN STORM hurls three storms per shot. Chain passive adds hops.
+      const bolts = id === 'chainstorm' ? 3 : 1;
+      const maxHops = 3 + Math.floor(w.lvl / 2) + (G.passives.chain || 0);
+      for (let bb = 0; bb < bolts; bb++) {
+        let fx = p.x, fz = p.z;
+        const taken: Enemy[] = [];
+        for (let hop = 0; hop < maxHops; hop++) {
+          let t: Enemy | null = null, bd = hop === 0 ? 260 : 120;
+          for (const e of G.enemies) {
+            if (taken.includes(e) || e.hp <= 0) continue;
+            const d = Math.hypot(e.x - fx, e.z - fz);
+            if (d < bd) { bd = d; t = e; }
+          }
+          if (!t) break;
+          taken.push(t);
+          damageEnemy(t, wDmg(id, w.lvl), fx, fz);
+          G.bullets.push({ x: t.x, z: t.z, vx: 0, vz: 0, life: 0.18, dmg: 0, ang: 0, hitR: 1, kind: 'zapflash', visual: true });
+          fx = t.x; fz = t.z;
+        }
+      }
     }
   }
 }
@@ -777,6 +860,7 @@ const DT = 1 / 60;
 const RUN_LEN = 1800; // 30:00 — the full director run (M3)
 let orbitPos: { x: number; z: number; r: number } | null = null;
 let orbit2Pos: { x: number; z: number; r: number } | null = null;
+let gnatPos: { x: number; z: number } | null = null; // M8: gnat companion
 let muteMsgT = 0; // "muted" banner timer (set by the M key)
 let paused = false; // M7: P toggles pause (play mode only)
 
@@ -840,7 +924,16 @@ function update(): void {
   for (let i = G.bullets.length - 1; i >= 0; i--) {
     const b = G.bullets[i];
     b.x += b.vx * DT; b.z += b.vz * DT; b.life -= DT;
-    if (b.life <= 0 || b.x < 0 || b.x > WORLD_W || b.z < 0 || b.z > WORLD_H) { G.bullets.splice(i, 1); continue; }
+    if (b.life <= 0) {
+      // mine (M8): fuse ran out — detonate a one-shot blast zone, then vanish
+      if (b.kind === 'mine') {
+        G.zones.push({ x: b.x, z: b.z, r: b.blast || 30, life: 0.3, tick: 0, dmg: b.dmg });
+        G.shake = Math.max(G.shake, 5);
+        sfx('pop');
+      }
+      G.bullets.splice(i, 1); continue;
+    }
+    if (b.x < 0 || b.x > WORLD_W || b.z < 0 || b.z > WORLD_H) { G.bullets.splice(i, 1); continue; }
     // enemy bullets (M7 spitter gunk): hit the PLAYER, not enemies. Whether or
     // not they connect, they skip the enemy/wall/boss/flush damage blocks.
     if (b.enemy) {
@@ -854,6 +947,8 @@ function update(): void {
       }
       continue;
     }
+    // visual bullets (M8 gnat beam / zap flash): pure flair, no damage blocks
+    if (b.visual) continue;
     // pierce: each bullet may hit a given enemy once (or a few times for
     // piercing weapons) — a hitSet of enemy indices refreshed per-frame so a
     // bullet passing THROUGH an enemy doesn't re-damage it every frame.
@@ -1155,7 +1250,7 @@ function endRun(won: boolean, flushed: boolean): void {
 }
 
 function clampNum(v: number): number { if (Number.isNaN(v)) { G.stats.nan++; return 0; } return v; }
-function startRun(seed: number): void { G = mkGame(seed); G.mode = 'play'; botDir = { x: 0, y: 0 }; orbitPos = null; orbit2Pos = null; lastEvo = null; paused = false; }
+function startRun(seed: number): void { G = mkGame(seed); G.mode = 'play'; botDir = { x: 0, y: 0 }; orbitPos = null; orbit2Pos = null; gnatPos = null; lastEvo = null; paused = false; }
 // ---------- rendering ----------
 const canvas = (document.getElementById('c') as HTMLCanvasElement);
 const ctx = canvas.getContext('2d')!;
@@ -1220,6 +1315,12 @@ function render(t: number): void {
   for (const b of G.bullets) {
     if (b.kind === 'plop' || b.kind === 'gunk' || b.kind === 'spritz' || b.kind === 'stickyplop') drawSprite(ctx, SPRITES.plop, Math.round(b.x - cx) - 4, Math.round(b.z - cy) - 4, 0);
     else if (b.kind === 'superfart') drawScaled(ctx, SPRITES.bolt, Math.round(b.x - cx) - 8, Math.round(b.z - cy) - 3, 2, 0);
+    else if (b.kind === 'mine') {
+      // arming blink: faster + brighter as the fuse runs out
+      const arm = Math.floor(t * (4 + 16 * (1 - Math.max(0, b.life) / 1.2))) % 2;
+      drawSprite(ctx, SPRITES.mine, Math.round(b.x - cx) - 3, Math.round(b.z - cy) - 3, arm);
+    }
+    else if (b.kind === 'zapflash' || b.kind === 'gnatbeam') drawSprite(ctx, SPRITES.chainfart, Math.round(b.x - cx) - 3, Math.round(b.z - cy) - 3, Math.floor(t * 30) % 2);
     else drawSprite(ctx, SPRITES.bolt, Math.round(b.x - cx), Math.round(b.z - cy), 0);
   }
   for (const e of G.enemies) {
@@ -1268,6 +1369,8 @@ function render(t: number): void {
     drawSprite(ctx, SPRITES.turd, Math.round(orbit2Pos.x - cx) - 5, Math.round(orbit2Pos.z - cy) - 5, Math.floor(t * 8) % 2);
   }
   for (const n of G.dmgNums) drawText(ctx, n.txt, Math.round(n.x - cx - 4), Math.round(n.z - cy), n.crit ? 1 : 0);
+  // M8 gnat companion (drawn over the player so it reads as a buddy)
+  if (gnatPos) drawSprite(ctx, SPRITES.gnat, Math.round(gnatPos.x - cx) - 4, Math.round(gnatPos.z - cy) - 4, Math.floor(t * 8) % 2);
   if (G.flashT > 0) { ctx.fillStyle = `rgba(255,255,255,${Math.min(0.5, G.flashT * 2)})`; ctx.fillRect(0, 0, VIEW_W, VIEW_H); }
   drawHud(t);
   if (G.evolutionT > 0) {
@@ -1295,9 +1398,9 @@ function drawFloor(cx: number, cy: number): void {
   }
 }
 
-function center(text: string, y: number, style: number): void {
-  const w = text.length * 6;
-  drawText(ctx, text, Math.round((VIEW_W - w) / 2), y, style);
+function center(text: string, y: number, style: number, scale = 1): void {
+  const w = text.length * 7 * scale;
+  drawText(ctx, text, Math.round((VIEW_W - w) / 2), y, style, scale);
 }
 function fmt(s: number): string {
   const mm = String(Math.floor(s / 60)).padStart(2, '0');
@@ -1323,9 +1426,11 @@ function drawHud(t: number): void {
     superfart: 'bolt', stickyplop: 'stickyplop', halo: 'cracker', slakelake: 'plop',
     superball: 'bouncy', ghost: 'ghost', bigburp: 'fartbomb', moon: 'moon',
     spritz: 'spritz', gunkfountain: 'plop', // M7
+    mine: 'mine', minelord: 'mine', chainfart: 'chainfart', chainstorm: 'chainfart', gnat: 'gnat', supergnat: 'gnat', // M8
     meats: 'donut', quick: 'bolt', slippers: 'gem', tp: 'gem', breakfast: 'donut',
     gloves: 'bolt', widestink: 'cracker', sticky: 'plop', lucky: 'gem',
     goldrush: 'goldbag', // M7
+    fuse: 'mine', chain: 'chainfart', winged: 'gnat', // M8
   };
   let ax = 6;
   for (const id of Object.keys(G.weapons)) {
@@ -1356,7 +1461,7 @@ function drawHud(t: number): void {
     ctx.fillStyle = '#5a2e4e'; ctx.fillRect(bbx, bby, bbw, 6);
     ctx.fillStyle = '#c95aa0'; ctx.fillRect(bbx, bby, Math.round(bbw * Math.max(0, G.boss.hp / G.boss.maxHp)), 6);
     const nm = G.boss.name;
-    drawText(ctx, nm, Math.round((VIEW_W - nm.length * 6) / 2), bby + 8, 1);
+    drawText(ctx, nm, Math.round((VIEW_W - nm.length * 7) / 2), bby + 8, 1);
   }
   // FINAL FLUSH warning banner
   if (G.flush) {
@@ -1383,22 +1488,26 @@ function overlay(title: string, sub1: string, sub2: string, t: number, dark: boo
   ctx.fillStyle = dark ? 'rgba(20,10,6,0.82)' : 'rgba(30,22,10,0.7)';
   ctx.fillRect(0, 0, VIEW_W, VIEW_H);
   const bounce = Math.round(Math.sin(t * 2) * 2);
-  center(title, 80 + bounce, 1);
-  center(sub1, 112, 0);
-  center(sub2, 124, 0);
+  center(title, 78 + bounce, 1, 2);
+  center(sub1, 116, 0);
+  center(sub2, 128, 0);
 }
 function drawLevelUp(): void {
   ctx.fillStyle = 'rgba(18,12,6,0.86)'; ctx.fillRect(0, 0, VIEW_W, VIEW_H);
-  center('LEVEL UP!', 12, 1);
+  center('LEVEL UP!', 8, 1, 2);
   // weapon id → icon sprite (the projectile/zone art for that weapon)
   const ICONS: Record<string, string> = {
     fartwhip: 'bolt', plopcannon: 'plop', crackerring: 'cracker', puddle: 'plop',
     bouncy: 'bouncy', stinkaura: 'stinkaura', fartbomb: 'fartbomb', turd: 'turd',
     superfart: 'bolt', stickyplop: 'stickyplop', halo: 'cracker', slakelake: 'plop',
     superball: 'bouncy', ghost: 'ghost', bigburp: 'fartbomb', moon: 'moon',
+    spritz: 'spritz', gunkfountain: 'plop', // M7
+    mine: 'mine', minelord: 'mine', chainfart: 'chainfart', chainstorm: 'chainfart', gnat: 'gnat', supergnat: 'gnat', // M8
     // passive item icons: use the closest kit art (VS passives get icons too)
     meats: 'donut', quick: 'bolt', slippers: 'gem', tp: 'gem', breakfast: 'donut',
     gloves: 'bolt', widestink: 'cracker', sticky: 'plop', lucky: 'gem',
+    goldrush: 'goldbag', // M7
+    fuse: 'mine', chain: 'chainfart', winged: 'gnat', // M8
   };
   G.options.forEach((o, i) => {
     const y = 36 + i * 44;
@@ -1434,10 +1543,10 @@ function drawTitle(t: number): void {
   drawScaled(ctx, SPRITES[CHARACTERS[selectedChar].sprite], Math.round(VIEW_W / 2 - 24), 54 + bob, 4, 0);
   const bounce = Math.round(Math.sin(t * 2) * 2);
   const title = 'POOP SURVIVORS';
-  const tw = title.length * 6;
+  const tw = title.length * 14; // 7px advance x 2x scale
   const tx = Math.round((VIEW_W - tw) / 2);
-  drawText(ctx, title, tx + 1, 109 + bounce + 1, 0);
-  drawText(ctx, title, tx, 108 + bounce, 1);
+  drawText(ctx, title, tx + 2, 109 + bounce + 2, 0, 2);
+  drawText(ctx, title, tx, 108 + bounce, 1, 2);
   if (Math.floor(t * 1.6) % 2 === 0) center('press SPACE to drop in', 136, 0);
   // character select: 1/2/3
   const chars = Object.keys(CHARACTERS);

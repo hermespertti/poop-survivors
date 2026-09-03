@@ -1233,6 +1233,75 @@ const lintking = mk(12, 12, lintkingFrames);
 const lintkingHit = mk(12, 12, lintkingFrames.map((f) => f.map((row) =>
   row.split('').map((c) => (c === 'e' ? '5' : c === '2' ? '5' : c === '4' ? '5' : c)).join(''))));
 
+// M8 content: three new base weapons — Gunk Mine (timed AoE bombs),
+// Chain Fart (homing chain zap), Gnat (chomping companion).
+const mine = mk(8, 8, [
+  [
+    '........',
+    '..444...',
+    '.43334..',
+    '4333334.',
+    '433d334.',
+    '4333334.',
+    '.43334..',
+    '..444...',
+  ],
+  [
+    '........',
+    '..ee4...',
+    '.43334..',
+    '4333334.',
+    '433d334.',
+    '4333334.',
+    '.43334..',
+    '..444...',
+  ],
+]);
+const gnat = mk(8, 8, [
+  [
+    '...55...',
+    '9......9',
+    '99....99',
+    '..4333..',
+    '.435534.',
+    '.433334.',
+    '..4444..',
+    '........',
+  ],
+  [
+    '........',
+    '...55...',
+    '9......9',
+    '99....99',
+    '..4333..',
+    '.435534.',
+    '.433334.',
+    '..4444..',
+  ],
+]);
+const chainfart = mk(8, 8, [
+  [
+    '...ee...',
+    '..e55e..',
+    '.e5555e.',
+    '.5e55e5.',
+    '.e5555e.',
+    '..e55e..',
+    '...ee...',
+    '........',
+  ],
+  [
+    '........',
+    '...ee...',
+    '.ee55ee.',
+    'e555555e',
+    'e555555e',
+    '.ee55ee.',
+    '...ee...',
+    '........',
+  ],
+]);
+
 export const SPRITES: Record<string, Sprite> = {
   crouton, croutonHit, bubble, bubbleHit, gem, bolt,
   plop, cracker, boss, bossHit, chest,
@@ -1245,6 +1314,7 @@ export const SPRITES: Record<string, Sprite> = {
   hotdog, avocado,
   spritz, splitter, splitterHit, spitter, spitterHit,
   plunger, plungerHit, lintking, lintkingHit,
+  mine, gnat, chainfart,
 };
 
 // ---------- 8x8 bitmap font ----------
@@ -1339,16 +1409,40 @@ export function drawScaled(
 }
 
 export function drawText(
-  ctx: CanvasRenderingContext2D, text: string, x: number, y: number, style: number,
+  ctx: CanvasRenderingContext2D, text: string, x: number, y: number, style: number, scale = 1,
 ): void {
   // 0 = dark outline (default), 1 = white, 2 = medium brown (secondary text)
+  // scale=2 for big screens (title, LEVEL UP, overlays) — doubles each font
+  // pixel for readability while keeping the bitmap look.
+  // style 0 gets a 1px near-black halo (drawn in a first pass so ink on top
+  // never smears it) — small brown-on-brown 1px text was unreadable in play.
   const ink = style === 1 ? PALETTE[5] : style === 2 ? '#a5651d' : PALETTE[4];
+  // every style gets a 1px near-black halo (drawn first, ink on top) — crisp
+  // dark outline + fill reads clearly on bright floors and dark overlays alike.
+  const halo = PALETTE[15];
+  const px = (i: number, c: number) => x + i * 7 * scale + c * scale;
+  const py = (r: number) => y + r * scale;
+  ctx.fillStyle = halo;
   for (let i = 0; i < text.length; i++) {
     const glyph = F[text[i].toUpperCase()] ?? F['?'];
     for (let r = 0; r < 8; r++) {
       const row = glyph[r];
       for (let c = 0; c < 7; c++) {
-        if (row[c] === '1') { ctx.fillStyle = ink; ctx.fillRect(x + i * 6 + c, y + r, 1, 1); }
+        if (row[c] !== '1') continue;
+        for (let ox = -1; ox <= 1; ox++) for (let oy = -1; oy <= 1; oy++) {
+          if (!ox && !oy) continue;
+          ctx.fillRect(px(i, c) + ox * scale, py(r) + oy * scale, scale, scale);
+        }
+      }
+    }
+  }
+  ctx.fillStyle = ink;
+  for (let i = 0; i < text.length; i++) {
+    const glyph = F[text[i].toUpperCase()] ?? F['?'];
+    for (let r = 0; r < 8; r++) {
+      const row = glyph[r];
+      for (let c = 0; c < 7; c++) {
+        if (row[c] === '1') ctx.fillRect(px(i, c), py(r), scale, scale);
       }
     }
   }
