@@ -1,0 +1,72 @@
+  seed 42: dead @ 612s | lv 20 | kills 1842 | 124 samples
+  seed 1337: dead @ 914s | lv 26 | kills 3018 | 184 samples
+  seed 9001: dead @ 694s | lv 20 | kills 2177 | 140 samples
+  seed 7777: dead @ 627s | lv 20 | kills 1892 | 127 samples
+  seed 31415: dead @ 314s | lv 12 | kills 670 | 64 samples
+  seed 27182: dead @ 921s | lv 27 | kills 3098 | 186 samples
+  seed 1618: dead @ 664s | lv 20 | kills 2047 | 134 samples
+  seed 272: dead @ 343s | lv 12 | kills 781 | 70 samples
+  seed 404: dead @ 261s | lv 10 | kills 457 | 54 samples
+  seed 55: dead @ 116s | lv 5 | kills 130 | 25 samples
+
+================ M7 BALANCE REPORT ================
+seeds: 10 (crouton, natural build, no head start)
+
+-- DEATH RATE --
+  wins (full 30:00): 0/10
+  deaths: 10/10 (of which flushed 0)
+    seed 42: died @ 612s (lv 20, kills 1842) — soup
+    seed 1337: died @ 914s (lv 26, kills 3018) — soup
+    seed 9001: died @ 694s (lv 20, kills 2177) — soup
+    seed 7777: died @ 627s (lv 20, kills 1892) — soup
+    seed 31415: died @ 314s (lv 12, kills 670) — soup
+    seed 27182: died @ 921s (lv 27, kills 3098) — soup
+    seed 1618: died @ 664s (lv 20, kills 2047) — soup
+    seed 272: died @ 343s (lv 12, kills 781) — soup
+    seed 404: died @ 261s (lv 10, kills 457) — soup
+    seed 55: died @ 116s (lv 5, kills 130) — soup
+
+-- BULLET HEAVEN (GDD: clear rate > spawn rate; target 8–10 min = 480–600s) --
+  reached by 4/10 seeds
+  first: 355s | median: 580s | last: 715s
+  (median in minutes: 9.7 min — target 8–10)
+
+-- POPULATION CURVE (median live enemies / minute) --
+   0:00 |0  16  10  29  41
+   5:00 | 51  69 43.5 58.5
+  10:00 |  81  50 90.5  85
+  15:00 |5   0   0   0   0
+  20:00 |0   0   0   0   0
+  25:00 |0   0   0   0   0
+  (min of the whole curve: 0 @ minute 0)
+
+-- LEVEL PACING (median level) --
+   5:00 → lv 10.5
+  10:00 → lv 20
+  15:00 → lv 25.5
+  20:00 → lv 0
+  25:00 → lv 0
+  29:00 → lv 0
+
+-- HP PRESSURE (median hp% per 5:00 band) --
+  0:00–5:00 → 100%
+  5:00–10:00 → 100%
+  10:00–15:00 → 95%
+  15:00–20:00 → 88%
+  20:00–25:00 → 0%
+  25:00–30:00 → 0%
+
+-- BOSS CLEAR RATE (bossKilled at run end, 0–6) --
+  median bosses killed: 1 | distribution: 0, 0, 0, 0, 1, 1, 1, 1, 2, 2
+
+-- CONSOLE --
+  clean across all 10 runs
+==================================================
+  FAIL death rate in the 1–5/10 band (got 10/10) — 0 = too easy, 6+ = too hard
+  FAIL bullet heaven reached by a MAJORITY of seeds (4/10)
+  PASS heaven median in the 7–12 min band (target 8–10; got 9.7 min)
+  FAIL a median run clears at least 2 scheduled bosses (got 1)
+  PASS console clean across all 10 runs
+
+M7 BALANCE: 2 pass / 3 fail
+BALANCE EXIT: 1

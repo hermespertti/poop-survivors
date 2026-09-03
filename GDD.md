@@ -487,3 +487,52 @@ strategy fight each other. Reverted; ship them together in M9.
 - Every harness now calls `test/server.mjs` `ensureServer()` first — a dead
   dev server no longer costs a suite its first lines.
 
+## 22. M9 balance pass (in progress, 2026-09-03) — the endgame wall was ranged chip
+
+Two measured, non-obvious fixes landed this session. Gate is 140/0 GREEN with
+m3 back to **2/5 completions** (was 1/5 pre-M8, 0/5 mid-M9).
+
+**Fix 1 — the m3 27:00–30:00 wall was spitter gunk, not the Lint King.**
+A one-shot in-page trace of seed 1337 (the `__cap` probe, bot verbatim) showed
+HP bleeding 100→10 from t=1632 with `near60=0` the whole time — no contact,
+and the Lint King doesn't even spawn until 1650. Spitters unlock at t=1620
+(27:00): they hold a 60–110u band, strafe, and lob 9-dmg gunk out to 280u. The
+soak bots only sensed enemies within 100u and had zero projectile-dodging, so
+they stood still in a gunk field, blind to the shots, then the 8250-HP Lint
+King finished them at 10 HP. The fix is a measuring-tool upgrade, not a game
+nerf: a new `__cap.enemyBullets(n)` probe + perpendicular-to-shot-line dodging
+in the m3 and balance bots (a human strafes off incoming fire). Result: m3
+wins at 1800s ×2, and the win builds keep their superfart:8 endgame weapon to
+the end (the earlier `!s.weapons.superfart` guard stops the bot re-maxing the
+base whip and resetting the evolved form to lvl 1).
+
+**Fix 2 — the ring is a COMMON item (×3 weight in the fresh bag).**
+The M8 pool-dilution regression (§21) starved the ring: with 12 weapons the
+even fresh lottery offered it ~1/12, so 7/10 natural seeds went ring-less and
+died before 5:00. VS treats the ring as a common, low-weight-drop item.
+Weighting it ×3 in the fresh bag restores roughly the M7 acquisition rate
+without touching the phase split (early 2-fresh / late 1-fresh). Result:
+median death level up, heaven 3/10 → 4/10, boss median 0 → 1, deaths spread
+from "7/10 by 5 min" to 116s–921s.
+
+**Where it stands (vs the §21 M9 targets):**
+
+| | M8 baseline | M9 now | target |
+|---|---|---|---|
+| m3 completions | 1/5 | **2/5** ✓ | ≥1 |
+| gate | 140/0 | **140/0** ✓ | 100% |
+| heaven reached | 3/10 | 4/10 | ≥5/10 (majority) |
+| heaven median | 9.9 min | 9.7 min ✓ | 8–10 |
+| boss median | 0 | 1 | ≥2 |
+| death rate | 10/10, 7 by 5min | 10/10, spread 116s–921s | 1–5/10 |
+
+**Remaining (next session):** the natural bot still dies 10/10 — but now
+*spread* (3 early at 116–343s, 7 mid at 612–921s) rather than clustered. The
+early deaths are the fresh-pick lottery (a seed that doesn't see the ring in
+its first 2–3 level-ups wastes picks on 2nd/3rd weapons and falls to the
+swarm). The mid deaths at lv 20–27 are the 10:00–15:00 population wall that a
+"decent but not great" bot is meant to sometimes lose to. Getting heaven to a
+majority + boss median ≥2 is a pick-strategy / early-pressure tune, not
+another content change — the pool and director are in good shape. Parked
+alongside M6 (mobile) — see the mobile milestone below.
+

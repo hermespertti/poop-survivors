@@ -247,6 +247,19 @@ await page.evaluate(() => {
             (sz > 0.3 && s.z > H - 120) || (sz < -0.3 && s.z < 120)) { sx = -sx; sz = -sz; }
         cap.move(sx, sz); return;
       }
+      // M9: dodge incoming spitter gunk like a human (perpendicular to the
+      // shot line). The pre-M9 bot stood still in the endgame gunk field —
+      // the trace showed hp bleeding 100→10 at near60=0 before the Lint King
+      // even spawned.
+      const shots = cap.enemyBullets(6).filter((b) => b.d < 110);
+      if (shots.length) {
+        const b0 = shots[0];
+        const sp = Math.hypot(b0.vx, b0.vz) || 1;
+        let px = -b0.vz / sp, pz = b0.vx / sp;
+        if ((px > 0.3 && s.x > W - 120) || (px < -0.3 && s.x < 120) ||
+            (pz > 0.3 && s.z > H - 120) || (pz < -0.3 && s.z < 120)) { px = -px; pz = -pz; }
+        cap.move(px, pz); return;
+      }
       let wx = 0, wz = 0, wsum = 0;
       for (const e of near) { const w = 1 - e.d / 100; wx += e.x * w; wz += e.z * w; wsum += w; }
       if (s.boss) {
@@ -292,8 +305,11 @@ await page.evaluate(() => {
       if (s.hp < 30) pick = o.findIndex((x) => x.id === 'hp');
       // 1. the ring first (kiting self-defense — needed from minute 0)
       if (pick < 0) pick = o.findIndex((x) => x.id === 'crackerring' && !s.weapons.crackerring);
-      // 2. then max the whip (evolution path → SUPER FART at chest)
-      if (pick < 0) pick = o.findIndex((x) => x.id === 'fartwhip' && x.lvl < 8);
+      // 2. then max the whip (evolution path → SUPER FART at chest) — but if
+      // we ALREADY own the evolved form (the head start grants superfart 8),
+      // maxing the base whip arms fartwhip→superfart and the next chest would
+      // RESET superfart to lvl 1, squashing our endgame weapon.
+      if (pick < 0) pick = o.findIndex((x) => x.id === 'fartwhip' && x.lvl < 8 && !s.weapons.superfart);
       if (pick < 0 && !(s.passives.quick)) pick = o.findIndex((x) => x.id === 'quick');
       if (pick < 0) pick = o.findIndex((x) => x.id === 'quick' && s.passives.quick < 5);
       if (pick < 0) pick = o.findIndex((x) => x.kind === 'weapon' && !s.weapons[x.id]);

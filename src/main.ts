@@ -329,33 +329,34 @@ function buildOptions(): ItemOpt[] {
     opts.push({ kind: 'gold', id: 'gold', name: 'Golden Scoop', desc: '+50 Gold', lvl: 0 });
     return opts;
   }
-  // VS: show 3 options. Guarantee at least one FRESH pick (a weapon/passive the
-  // bot doesn't own yet) so a build can actually diversify — a pure owned-upgrade
-  // pool lets a single weapon snowball and starve the player of new tools.
-  // NOTE (M8, 2026-09-03): this 2-fresh + 1-upgrade split was tuned for 9
-  // weapons. At 12, an owned-weapon upgrade is ~3% of the per-screen lottery,
-  // so natural builds scatter across 6+ weapons — the M8 balance gate dropped
-  // bullet-heaven from 8/10 to 3/10 seeds (see GDD §18/§21). The VS-true fix is
-  // to weight owned upgrades up, but that only pays off together with the
-  // natural-bot pick priority (which currently grabs fresh weapons first) —
-  // ship both together in the M9 balance pass, not the pool alone.
+  // VS-true pool (M9): OWNED UPGRADES first, PHASE-AWARE. The M7 split
+  // (2 fresh + 1 upgrade) was tuned for 9 weapons; at 12, an owned-weapon
+  // upgrade was ~3% of the per-screen lottery, so late-game builds scattered
+  // across 6+ weapons and never crossed the spawn curve (GDD 21). But a flat
+  // 1-fresh pool backfires early: the ring becomes a ~4%/screen lottery
+  // (1 of ~24 fresh options) and builds gamble their defense (measured M9c:
+  // heaven 4/10). VS behavior: fresh picks matter early, upgrades dominate
+  // late. So: <3 owned weapons -> 2 fresh + 1 upgrade (M7 early experience,
+  // fast ring/kit acquisition); >=3 -> 1 fresh + 2 upgrades (max lines,
+  // don't dilute).
   const shuf = (a: ItemOpt[]) => { for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(G.rng() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; };
   const ownedUp = opts.filter((o) => (o.kind === 'weapon' && G.weapons[o.id]) || (o.kind === 'passive' && G.passives[o.id]));
-  const fresh = opts.filter((o) => !ownedUp.includes(o));
-  const freshWeapons = fresh.filter((o) => o.kind === 'weapon');
-  const freshOther = fresh.filter((o) => o.kind !== 'weapon');
+  // VS-true rarity (M9): the ring is a COMMON item (weight 3 in the fresh
+  // bag). With 12 weapons the even lottery starved it — measured: 7/10 seeds
+  // ring-less, dead before 5:00 (M8 pool-dilution regression). ×3 restores
+  // roughly the M7 acquisition rate without touching the phase split.
+  const freshBag = opts.filter((o) => !ownedUp.includes(o)).flatMap((o) => o.id === 'crackerring' ? [o, o, o] : [o]);
+  const fresh = shuf(freshBag).filter((o, i, a) => a.findIndex((x) => x.id === o.id) === i);
+  const owned = shuf(ownedUp);
+  const ownedWeaponCount = Object.keys(G.weapons).filter((id) => !WEAPONS[id].evolved && G.weapons[id]).length;
+  const freshSlots = ownedWeaponCount < 3 ? 2 : 1;
   let result: ItemOpt[];
-  if (fresh.length >= 2) {
-    // one fresh weapon (if any) + one other fresh + one owned upgrade
-    result = [
-      shuf(freshWeapons)[0] || shuf(freshOther)[0],
-      shuf(fresh)[0],
-      shuf(ownedUp)[0] || shuf(fresh)[1],
-    ];
-  } else if (fresh.length === 1) {
-    result = [fresh[0], shuf(ownedUp)[0], shuf(ownedUp)[1] || shuf(fresh)[0]];
+  if (fresh.length >= freshSlots) {
+    result = fresh.slice(0, freshSlots).concat(ownedUp.length ? owned : fresh.slice(freshSlots)).slice(0, 3);
+  } else if (fresh.length > 0) {
+    result = [fresh[0], owned[0], owned[1]].filter((o): o is ItemOpt => !!o) as ItemOpt[];
   } else {
-    result = shuf(ownedUp).slice(0, 3);
+    result = owned.slice(0, 3);
   }
   // de-dup by id (guard against a single-option pool)
   const seen = new Set<string>();
@@ -1689,6 +1690,14 @@ const win = window;
   chars: () => Object.keys(CHARACTERS).map((id) => ({ id, name: CHARACTERS[id].name, unlock: CHARACTERS[id].unlock, startWeapon: CHARACTERS[id].startWeapon })),
   stages: () => Object.keys(STAGES).map((id) => ({ id, name: STAGES[id].name, unlock: STAGES[id].unlock, scriptShift: STAGES[id].scriptShift })),
   enemiesNear: (r: number) => G.enemies.filter((e) => Math.hypot(e.x - G.player.x, e.z - G.player.z) < r).length,
+  // nearest INCOMING enemy bullets (spitter gunk etc) — soak bots use this to
+  // dodge like a human (the m3 endgame wall was the bot standing still in a
+  // 160u gunk field, blind to projectiles)
+  enemyBullets: (n = 10) => {
+    return G.bullets.filter((b) => b.enemy)
+      .map((b) => ({ x: b.x, z: b.z, vx: b.vx, vz: b.vz, d: Math.hypot(b.x - G.player.x, b.z - G.player.z) }))
+      .sort((a, b) => a.d - b.d).slice(0, n);
+  },
   enemies: (n = 8) => {
     const arr = G.enemies.map((e) => ({ x: e.x, z: e.z, hp: +e.hp.toFixed(1), d: Math.hypot(e.x - G.player.x, e.z - G.player.z), kx: +e.kbx.toFixed(1), kz: +e.kbz.toFixed(1) })).sort((a, b) => a.d - b.d).slice(0, n);
     return arr;

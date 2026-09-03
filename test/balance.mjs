@@ -61,6 +61,19 @@ await page.evaluate(() => {
         const cd = Math.hypot(cdx, cdz) || 1;
         if (cd < 220) { cap.move(cdx / cd, cdz / cd); return; }
       }
+      // M9: dodge incoming spitter gunk like a human (perpendicular to the shot
+      // line). The pre-M9 natural bot stood still in the endgame gunk field —
+      // the m3 trace showed hp bleeding 100→10 at near60=0 before the Lint King
+      // even spawned, so the 27-30 min wall was ranged chip, not the boss.
+      const shots = cap.enemyBullets(6).filter((b) => b.d < 110);
+      if (shots.length) {
+        const b0 = shots[0];
+        const sp = Math.hypot(b0.vx, b0.vz) || 1;
+        let px = -b0.vz / sp, pz = b0.vx / sp;
+        if ((px > 0.3 && s.x > W - 120) || (px < -0.3 && s.x < 120) ||
+            (pz > 0.3 && s.z > H - 120) || (pz < -0.3 && s.z < 120)) { px = -px; pz = -pz; }
+        cap.move(px, pz); return;
+      }
       const near = cap.enemies(16).filter((e) => e.d < 100);
       let wx = 0, wz = 0, wsum = 0;
       for (const e of near) { const w = 1 - e.d / 100; wx += e.x * w; wz += e.z * w; wsum += w; }
@@ -110,9 +123,27 @@ await page.evaluate(() => {
       // This is what a real player does. The DPS-priority build (max one
       // weapon first) is the deliberately-suboptimal skill floor — it never
       // reaches bullet heaven and dies in ~2 min.
+      // M9: the DECENT PLAYER build (ring first, 3-weapon kit, then scale).
+      // Two measured traps this avoids:
+      //  (a) pure new-weapon-first (the M8 pick) scatters across 6+ weapons
+      //      on the 12-weapon pool and never scales anything -> no heaven.
+      //  (b) pure owned-upgrade-first snowballs the START weapon and skips
+      //      the ring entirely -> no early defense, dead at lv 4-7 (measured
+      //      1/10 heaven, 8/10 dead < 200s).
+      // So: (1) the ring up to 6 for early defense, (2) build a 3-DPS kit
+      //      while the kit is small, (3) scale owned weapons once the kit
+      //      exists, (4) passive upgrades, (5) ring past 6, (6) fill in.
+      // s.weapons is {id: lvl} — owned only; a fresh option has no entry, so
+      // "owned" tests must use s.weapons[x.id], never x.lvl (a fresh option
+      // carries lvl:1, which fooled the M9a pick change into a no-op).
       if (pick < 0) pick = o.findIndex((x) => x.id === 'crackerring' && x.lvl < 6);
+      if (pick < 0 && !s.weapons.crackerring) pick = o.findIndex((x) => x.id === 'crackerring');
+      const dpsCount = Object.keys(s.weapons).filter((k) => k !== 'crackerring').length;
+      if (pick < 0 && dpsCount < 3) pick = o.findIndex((x) => x.kind === 'weapon' && !s.weapons[x.id]);
+      if (pick < 0) pick = o.findIndex((x) => x.kind === 'weapon' && s.weapons[x.id] && x.lvl < 8);
+      if (pick < 0) pick = o.findIndex((x) => x.kind === 'passive' && s.passives[x.id]);
+      if (pick < 0) pick = o.findIndex((x) => x.id === 'crackerring' && x.lvl < 8);
       if (pick < 0) pick = o.findIndex((x) => x.kind === 'weapon' && !s.weapons[x.id]);
-      if (pick < 0) pick = o.findIndex((x) => x.kind === 'weapon' && x.lvl < 8);
       if (pick < 0) pick = o.findIndex((x) => x.kind === 'passive');
       if (pick < 0) pick = 0;
       cap.pick(pick);
