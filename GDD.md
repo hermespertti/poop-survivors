@@ -318,3 +318,40 @@ bars) and played by a `Chip` synth that emulates the APU channels.
   variety/snowball — we take VS's lane (auto-attack, positioning only) and
   steal one Brotato idea: the between-moment pause (level-up screen is our
   shop; it must *feel* like optimizing).
+
+## 17. Content round 2 (shipped 2026-09-03, "M7" in commit/test parlance)
+
+The user's "more content and polish" pass. Everything below is live and
+covered by the M2/M3/M4 suites (33/27/51 assertions respectively):
+
+- **2 new enemy archetypes** — the script's late-run gap (17:00→30:00 used
+  to re-roll the same six kinds):
+  - `splitter` (22:00): big slow lump; on death splits into two mops — the
+    "kill it and it gets worse, don't kill it and it gets you" choice.
+  - `spitter` (27:00): FIRST ranged enemy — holds a 60–110u band, strafes,
+    lobs gunk shots that hit the player (new `enemy` bullet flag; enemy
+    bullets skip the enemy/wall/boss damage blocks entirely).
+- **9th weapon line**: `spritz` (Gunk Spritz, short-range cone) → +TP Crown→
+  `gunkfountain` (GUNK FOUNTAIN: radial geyser + splash zone). TP Crown was
+  the only unpaired evo passive; now all 9 passives have an evolution or a
+  job.
+- **10th passive**: `goldrush` (Gold Rush, +15% gold/lvl) — scales every
+  gold gain (chest/flush/item/gold-option), so the meta actually compounds.
+- **4th character**: `plunger` — Gunk Spritz start weapon, +50% gem magnet,
+  unlock = kill 3 bosses (new `boss3` meta flag, tracked via bossKilled).
+- **6th boss**: `THE LINT KING` @ 27:30 (1650s) — between Mr. Sphincter and
+  the Final Flush. Slow fluff tank; 8-way gunk ring on a timer; at 50% HP
+  it RAGES (faster, faster rings, spawns spitter pairs). Penultimate-horror
+  slot: the run's last new *kind* of pressure before the flush.
+- **Bathroom stage now means something**: `scriptShift: 60` was declared but
+  never applied — `activeKinds()` now subtracts the stage's scriptShift from
+  every unlock time, so the bathroom runs the identical script 60s early
+  (droplet at 0:00 instead of 1:00). Stage difficulty is still scripted, not
+  simulated (VS rule #5).
+- **Polish**: `P` pause (play mode only, with blinking PAUSED banner; the
+  __cap.step soak path bypasses it so determinism tests are untouched),
+  title screen advertises P/M, win screen shows the actual stage name
+  (was "KITCHEN CLEARED" even in the bathroom).
+- **Audio (previous pass, same release)**: sfx voice cap (8 one-shots per
+  100ms — heavy clatter can't tank the real-time loop), hurt/pop/gem/pickup
+  kinds, music intensity scaled to director pressure, M mute.

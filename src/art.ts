@@ -1076,6 +1076,163 @@ const superballFrames: string[][] = [
 ];
 const superball = mk(10, 10, superballFrames);
 
+// GUNK SPRITZ / GUNK FOUNTAIN (M7): short-range gunk cone, evolves into a
+// radial fountain + splash zone
+const spritz = mk(10, 10, [
+  [
+    '..........',
+    '..........',
+    '...4444...',
+    '..4dddd4..',
+    '.4dd5dd4..',
+    '.4dddddd4.',
+    '.4d4dd4d4.',
+    '..4dd4dd4.',
+    '...4444...',
+    '..........',
+  ],
+]);
+
+// SPLITTER (M7): big gunk lump that splits into two mops on death
+const splitterFrames: string[][] = [
+  [
+    '............',
+    '....4444....',
+    '..4dddddd4..',
+    '.4dddddddd4.',
+    '.4d5dddd5d4.',
+    '.4dddddddd4.',
+    '4dddd4dddd4.',
+    '4dd66666dd4.',
+    '4dddddddddd4',
+    '.4dddddddd4.',
+    '..44444444..',
+    '............',
+  ],
+  [
+    '............',
+    '....4444....',
+    '.4dddddddd4.',
+    '.4dddddddd4.',
+    '.4d5dddd5d4.',
+    '4dddddddddd4',
+    '4dd666666dd4',
+    '4d6dddddd6d4',
+    '4dddddddddd4',
+    '.4dddddddd4.',
+    '..44444444..',
+    '............',
+  ],
+];
+const splitter = mk(12, 12, splitterFrames);
+const splitterHit = mk(12, 12, splitterFrames.map((f) => f.map((row) =>
+  row.split('').map((c) => (c === 'd' ? '5' : c === '6' ? '5' : c === '4' ? '5' : c)).join(''))));
+
+// SPITTER (M7): ranged gunk blob — holds distance, lobs gunk shots
+const spitterFrames: string[][] = [
+  [
+    '............',
+    '..44444444..',
+    '.4777777774.',
+    '.4757777574.',
+    '477777777774',
+    '477666667774',
+    '477777777774',
+    '.4777777774.',
+    '.4777777774.',
+    '..47777774..',
+    '...444444...',
+    '............',
+  ],
+  [
+    '............',
+    '..44444444..',
+    '.4777777774.',
+    '.4757777574.',
+    '477777777774',
+    '477666667774',
+    '476666666774',
+    '.4776667774.',
+    '.4777777774.',
+    '..47777774..',
+    '...444444...',
+    '............',
+  ],
+];
+const spitter = mk(12, 12, spitterFrames);
+const spitterHit = mk(12, 12, spitterFrames.map((f) => f.map((row) =>
+  row.split('').map((c) => (c === '7' ? '5' : c === '6' ? '5' : c === '4' ? '5' : c)).join(''))));
+
+// PLUNGER (M7): the 4th character — a red-gold plunger, 2 walk frames
+const plungerFrames: string[][] = [
+  [
+    '....4444....',
+    '.....44.....',
+    '.....44.....',
+    '....2222....',
+    '...222222...',
+    '..22222222..',
+    '.2222222222.',
+    '.2222222222.',
+    '.3333333333.',
+    '..33333333..',
+    '............',
+    '............',
+  ],
+  [
+    '....4444....',
+    '.....44.....',
+    '.....44.....',
+    '....2222....',
+    '...222222...',
+    '..22222222..',
+    '.2222222222.',
+    '.2222222222.',
+    '.3333333333.',
+    '..33..33....',
+    '............',
+    '............',
+  ],
+];
+const plunger = mk(12, 12, plungerFrames);
+const plungerHit = mk(12, 12, plungerFrames.map((f) => f.map((row) =>
+  row.split('').map((c) => (c === '2' ? '5' : c === '3' ? '5' : c === '4' ? '5' : c)).join(''))));
+
+// THE LINT KING (M7): boss 6 — a crowned fluffball, 2 frames
+const lintkingFrames: string[][] = [
+  [
+    '..22222222..',
+    '.2222222222.',
+    '.4eeeeeeee4.',
+    '4ee6eeee6ee4',
+    '4eeeeeeeeee4',
+    '4e6eeeeee6e4',
+    '4eeeeeeeeee4',
+    '.4eeeeeeee4.',
+    '.4eeeeeeee4.',
+    '..4eeeeee4..',
+    '...444444...',
+    '............',
+  ],
+  [
+    '..22222222..',
+    '.2222222222.',
+    '4eeeeeeeeee4',
+    '4e66eeee66e4',
+    '4eeeeeeeeee4',
+    '4ee6eeee6ee4',
+    '4eeeeeeeeee4',
+    '.4eeeeeeee4.',
+    '.4eeeeeeee4.',
+    '..4eeeeee4..',
+    '...444444...',
+    '............',
+  ],
+];
+const lintking = mk(12, 12, lintkingFrames);
+const lintkingHit = mk(12, 12, lintkingFrames.map((f) => f.map((row) =>
+  row.split('').map((c) => (c === 'e' ? '5' : c === '2' ? '5' : c === '4' ? '5' : c)).join(''))));
+
 export const SPRITES: Record<string, Sprite> = {
   crouton, croutonHit, bubble, bubbleHit, gem, bolt,
   plop, cracker, boss, bossHit, chest,
@@ -1086,6 +1243,8 @@ export const SPRITES: Record<string, Sprite> = {
   bouncy, stinkaura, fartbomb, turd,
   stickyplop, halo, slakelake, superball, ghost, bigburp, moon,
   hotdog, avocado,
+  spritz, splitter, splitterHit, spitter, spitterHit,
+  plunger, plungerHit, lintking, lintkingHit,
 };
 
 // ---------- 8x8 bitmap font ----------

@@ -62,6 +62,7 @@ const WEAPONS: Record<string, {
   stinkaura:  { name: 'Stink Aura',   desc: 'Damages nearby enemies, passive',   maxLvl: 8, baseDmg: 4,  baseCd: 0.5, dmgPerLvl: 2, cdPerLvl: -0.02, evolved: false, evoWith: 'lucky', evolvesTo: 'ghost' },
   fartbomb:   { name: 'Fart Bomb',    desc: 'Big explosion at a random enemy',   maxLvl: 8, baseDmg: 35, baseCd: 3.5, dmgPerLvl: 10, cdPerLvl: -0.12, evolved: false, evoWith: 'breakfast', evolvesTo: 'bigburp' },
   turd:       { name: 'Orbiting Turd', desc: 'Heavy orbiting damage zone, slow', maxLvl: 8, baseDmg: 14, baseCd: 1.0, dmgPerLvl: 6, cdPerLvl: -0.03, evolved: false, evoWith: 'slippers', evolvesTo: 'moon' },
+  spritz:     { name: 'Gunk Spritz',  desc: 'Short-range gunk cone',             maxLvl: 8, baseDmg: 9,  baseCd: 1.5, dmgPerLvl: 4, cdPerLvl: -0.03, evolved: false, evoWith: 'tp', evolvesTo: 'gunkfountain' },
   // ---------- evolved weapons (chest-only, evolved: true) ----------
   superfart:   { name: 'SUPER FART',     desc: 'Wide devastating piercing beam', maxLvl: 8, baseDmg: 40, baseCd: 1.1, dmgPerLvl: 6, cdPerLvl: -0.02, evolved: true },
   stickyplop:  { name: 'Sticky Plop',    desc: 'Bigger blob, lingers, re-explodes', maxLvl: 8, baseDmg: 30, baseCd: 2.2, dmgPerLvl: 10, cdPerLvl: -0.08, evolved: true },
@@ -71,6 +72,7 @@ const WEAPONS: Record<string, {
   ghost:       { name: 'Ghost of Last Night', desc: 'Orbiting ghost that bites + auras', maxLvl: 8, baseDmg: 8, baseCd: 0.4, dmgPerLvl: 4, cdPerLvl: -0.02, evolved: true },
   bigburp:     { name: 'BIG BURP',       desc: 'Massive multi-target AOE', maxLvl: 8, baseDmg: 55, baseCd: 2.8, dmgPerLvl: 14, cdPerLvl: -0.1, evolved: true },
   moon:        { name: 'MOON OF THE BOWEL', desc: 'A full moon of doom circles you', maxLvl: 8, baseDmg: 24, baseCd: 0.8, dmgPerLvl: 10, cdPerLvl: -0.02, evolved: true },
+  gunkfountain:{ name: 'GUNK FOUNTAIN',  desc: 'Radial gunk geyser + splash zone', maxLvl: 8, baseDmg: 12, baseCd: 1.2, dmgPerLvl: 5, cdPerLvl: -0.03, evolved: true },
 };
 const PASSIVES: Record<string, { name: string; desc: string; maxLvl: number }> = {
   meats:      { name: 'Meat Shakes',    desc: '+10% weapon damage / lv', maxLvl: 5 },
@@ -82,6 +84,7 @@ const PASSIVES: Record<string, { name: string; desc: string; maxLvl: number }> =
   widestink:  { name: 'Wide Stink',     desc: '+10% weapon area / lv', maxLvl: 5 },
   sticky:     { name: 'Sticky',         desc: '+10% duration / lv', maxLvl: 5 },
   lucky:      { name: 'Lucky Charms',   desc: '+10% luck / lv (evolution unlocks)', maxLvl: 5 },
+  goldrush:   { name: 'Gold Rush',      desc: '+15% gold / lv (M7)', maxLvl: 5 },
 };
 
 function wDmg(id: string, lvl: number): number { return (WEAPONS[id].baseDmg + WEAPONS[id].dmgPerLvl * (lvl - 1)) * G.stats.dmgMult; }
@@ -106,17 +109,22 @@ const CHARACTERS: Record<string, {
   avocado:  { name: 'Avocado',  sprite: 'avocado',  startWeapon: 'puddle',
               dmgBonus: 0, speedBonus: 0, armor: 1, hpBonus: 0, goldBonus: 0, magnetBonus: 0,
               unlock: 'kills500', unlockDesc: 'kill 500 enemies' },
+  plunger:  { name: 'Plunger',  sprite: 'plunger',  startWeapon: 'spritz',
+              dmgBonus: 0, speedBonus: 0, armor: 0, hpBonus: 0, goldBonus: 0, magnetBonus: 0.5,
+              unlock: 'boss3', unlockDesc: 'kill 3 bosses' },
 };
 
-// ---------- enemies (M3 roster) ----------
+// ---------- enemies (M3 roster, M7 extensions) ----------
 type Enemy = {
   x: number; z: number; hp: number; maxHp: number; speed: number; dmg: number;
   radius: number; xp: number; kind: string; hitT: number; wob: number;
-  kbx: number; kbz: number;
+  kbx: number; kbz: number; spitCd?: number;
 };
 // enemy archetype data table (per the GDD director script)
 // bubble: chaser. droplet: fast thin. crumb: tanky slow. mop: swarmer (weak,
 // many). stink: slow heavy cloud. sponge: shielded (takes half damage).
+// splitter (M7): big lump, splits into two mops on death. spitter (M7):
+// ranged — holds its distance band and lobs gunk shots.
 const ENEMY_TYPES: Record<string, {
   hp: number; speed: number; dmg: number; radius: number; xp: number;
 }> = {
@@ -126,6 +134,8 @@ const ENEMY_TYPES: Record<string, {
   mop:     { hp: 3,  speed: 40, dmg: 5,  radius: 4, xp: 1 },
   stink:   { hp: 60, speed: 16, dmg: 16, radius: 7, xp: 5 },
   sponge:  { hp: 40, speed: 24, dmg: 10, radius: 5, xp: 4 },
+  splitter:{ hp: 26, speed: 22, dmg: 10, radius: 7, xp: 3 },
+  spitter: { hp: 18, speed: 18, dmg: 8,  radius: 6, xp: 3 },
 };
 // spawn-time HP scaling (VS: enemies get tankier over the run)
 function enemyHp(kind: string): number {
@@ -133,7 +143,7 @@ function enemyHp(kind: string): number {
   return base * (1 + G.time / 90);
 }
 type Gem = { x: number; z: number; val: number; vx: number; vz: number; pulled: boolean };
-type Bullet = { x: number; z: number; vx: number; vz: number; life: number; dmg: number; ang: number; hitR: number; kind: string; bounces?: number; bounceSpeed?: number; linger?: number; hitIds?: number[] };
+type Bullet = { x: number; z: number; vx: number; vz: number; life: number; dmg: number; ang: number; hitR: number; kind: string; bounces?: number; bounceSpeed?: number; linger?: number; hitIds?: number[]; enemy?: boolean };
 type Zone = { x: number; z: number; r: number; life: number; tick: number; dmg: number };
 type DmgNum = { x: number; z: number; vy: number; t: number; txt: string; crit: boolean };
 type Mode = 'title' | 'play' | 'levelup' | 'dead' | 'win';
@@ -161,6 +171,7 @@ type Game = {
     shots: Record<string, number>; kbApplied: number; chestTaken: number; itemTaken: number;
     dmgMult: number; cdMult: number; speedMult: number; xpMult: number;
     projSpeedMult: number; areaMult: number; durationMult: number; maxHp: number;
+    goldMult: number;
   };
   spawnCd: number; spawnInterval: number; waveIdx: number; itemIdx: number;
   char: string; stage: string; armor: number;
@@ -204,7 +215,7 @@ function mkGame(seed: number): Game {
     flush: null, flushResolved: false, flushed: false, wall: [],
     options: [], flashT: 0, shake: 0, evolutionT: 0, evolved: false,
     kills: 0, bossKilled: 0,
-    stats: { maxLevel: 1, levelUps: 0, gems: 0, nan: 0, shots: {}, kbApplied: 0, chestTaken: 0, itemTaken: 0, dmgMult: 1 + ch.dmgBonus, cdMult: 1, speedMult: 1 + ch.speedBonus, xpMult: 1, projSpeedMult: 1, areaMult: 1, durationMult: 1, maxHp: PLAYER.maxHp + ch.hpBonus },
+    stats: { maxLevel: 1, levelUps: 0, gems: 0, nan: 0, shots: {}, kbApplied: 0, chestTaken: 0, itemTaken: 0, dmgMult: 1 + ch.dmgBonus, cdMult: 1, speedMult: 1 + ch.speedBonus, xpMult: 1, projSpeedMult: 1, areaMult: 1, durationMult: 1, goldMult: 1, maxHp: PLAYER.maxHp + ch.hpBonus },
     spawnCd: 1.0, spawnInterval: 1.1, waveIdx: 0, itemIdx: 0,
     char: selectedChar, stage: selectedStage, armor: ch.armor,
   };
@@ -219,6 +230,7 @@ function recomputeStats(): void {
   G.stats.projSpeedMult = 1 + 0.10 * p('gloves');
   G.stats.areaMult = 1 + 0.10 * p('widestink');
   G.stats.durationMult = 1 + 0.10 * p('sticky');
+  G.stats.goldMult = 1 + 0.15 * p('goldrush'); // M7: +15% gold / lv
   G.stats.maxHp = PLAYER.maxHp + 25 * p('breakfast');
   if (G.player.hp > G.stats.maxHp) G.player.hp = G.stats.maxHp;
 }
@@ -346,7 +358,7 @@ function pickOption(i: number): void {
   } else if (o.kind === 'hp') {
     G.player.hp = Math.min(PLAYER.maxHp, G.player.hp + 25);
   } else if (o.kind === 'gold') {
-    G.gold += 50;
+    G.gold += Math.round(50 * G.stats.goldMult); // M7 gold rush scaling
   }
   G.mode = 'play';
   G.player.hp = PLAYER.maxHp; // VS rule: leveling up restores health
@@ -386,6 +398,13 @@ function damageEnemy(e: Enemy, dmg: number, srcX: number, srcZ: number): void {
     G.kills++;
     const idx = G.enemies.indexOf(e);
     if (idx >= 0) G.enemies.splice(idx, 1);
+    // splitter (M7): death splits into two mops — the "big lump" payoff
+    if (e.kind === 'splitter') {
+      for (let s2 = 0; s2 < 2; s2++) {
+        const a = G.rng() * Math.PI * 2;
+        G.enemies.push({ x: e.x + Math.cos(a) * 6, z: e.z + Math.sin(a) * 6, hp: enemyHp('mop'), maxHp: enemyHp('mop'), speed: ENEMY_TYPES.mop.speed, dmg: ENEMY_TYPES.mop.dmg, radius: ENEMY_TYPES.mop.radius, xp: ENEMY_TYPES.mop.xp, kind: 'mop', hitT: 0, wob: G.rng() * 6.28, kbx: 0, kbz: 0 });
+      }
+    }
     G.gems.push({ x: e.x, z: e.z, val: e.xp, vx: (G.rng() - 0.5) * 40, vz: (G.rng() - 0.5) * 40, pulled: false });
     sfx('pop'); // enemy dies — a squishy little pop
   }
@@ -508,6 +527,21 @@ function fireWeapons(): void {
       G.zones.push({ x: tx, z: tz, r, life: wDuration(0.6), tick: 0.25, dmg: wDmg(id, w.lvl) });
     } else if (id === 'stickyplop') {
       G.bullets.push({ x: p.x, z: p.z, vx: wProjSpeed(Math.cos(p.face) * 150), vz: wProjSpeed(Math.sin(p.face) * 150), life: wDuration(1.6), dmg: wDmg('stickyplop', w.lvl), ang: p.face, hitR: wArea(6), kind: 'stickyplop', linger: 3 });
+    } else if (id === 'spritz') {
+      // M7: short-range gunk cone in the facing dir
+      const count = Math.min(5, 2 + Math.floor(w.lvl / 2));
+      for (let k = 0; k < count; k++) {
+        const a = p.face + (k - (count - 1) / 2) * 0.18;
+        G.bullets.push({ x: p.x, z: p.z, vx: wProjSpeed(Math.cos(a) * 180), vz: wProjSpeed(Math.sin(a) * 180), life: wDuration(0.5), dmg: wDmg('spritz', w.lvl), ang: a, hitR: wArea(4), kind: 'spritz' });
+      }
+    } else if (id === 'gunkfountain') {
+      // M7 evolution: radial gunk geyser + a lingering splash zone at your feet
+      const n = 10 + w.lvl;
+      for (let k = 0; k < n; k++) {
+        const a = (k / n) * Math.PI * 2 + G.rng() * 0.2;
+        G.bullets.push({ x: p.x, z: p.z, vx: Math.cos(a) * 200, vz: Math.sin(a) * 200, life: wDuration(0.7), dmg: wDmg('gunkfountain', w.lvl), ang: a, hitR: wArea(5), kind: 'gunk' });
+      }
+      G.zones.push({ x: p.x, z: p.z, r: wArea(40), life: wDuration(0.8), tick: 0.3, dmg: wDmg('gunkfountain', w.lvl) * 0.5 });
     }
   }
 }
@@ -521,6 +555,7 @@ const BOSS_SCHEDULE: Array<{ t: number; name: string; kind: string }> = [
   { t: 900,   name: 'THE CONSTIPATION',    kind: 'constipation' },
   { t: 1200,  name: 'THE DIARRHEA EXPRESS', kind: 'express' },
   { t: 1500,  name: 'MR. SPHINCTER',       kind: 'sphincter' },
+  { t: 1650,  name: 'THE LINT KING',       kind: 'lintking' }, // M7: the penultimate horror
 ];
 type Boss = {
   x: number; z: number; hp: number; maxHp: number; speed: number; dmg: number;
@@ -535,6 +570,7 @@ const BOSS_STATS: Record<string, { hp: number; speed: number; dmg: number; radiu
   constipation: { hp: 2000, speed: 14, dmg: 16, radius: 13 },
   express:      { hp: 1400, speed: 55, dmg: 14, radius: 10 },
   sphincter:    { hp: 2600, speed: 20, dmg: 18, radius: 13 },
+  lintking:     { hp: 2200, speed: 24, dmg: 16, radius: 12 }, // M7
   flush:        { hp: 1200, speed: 30, dmg: 30, radius: 14 },
 };
 function spawnBoss(kind: string, name: string): void {
@@ -589,7 +625,7 @@ function hitFlush(dmg: number, srcX: number, srcZ: number): void {
   sfx('hit'); // flush takes a hit — the same clatter as an enemy hit
   if (f.hp <= 0) {
     G.flush = null;
-    G.gold += 500; // bonus gold for killing the Flush
+    G.gold += Math.round(500 * G.stats.goldMult); // bonus gold for killing the Flush
     sfx('win');
     endRun(true, false);
     G.shake = 12; G.flashT = 0.5;
@@ -625,7 +661,7 @@ function resolveChest(): void {
     sfx('evolution');
     lastEvo = { base: rdy.baseId, passive: req, to: rdy.toId };
   } else {
-    G.gold += 50;
+    G.gold += Math.round(50 * G.stats.goldMult);
     G.player.hp = Math.min(PLAYER.maxHp, G.player.hp + 25);
     sfx('chest');
   }
@@ -644,13 +680,19 @@ const SCRIPT: Array<{ t: number; kind: string; weight: number }> = [
   { t: 420,   kind: 'mop',     weight: 0.6 },
   { t: 720,   kind: 'stink',   weight: 0.35 },
   { t: 1020,  kind: 'sponge',  weight: 0.3 },
+  { t: 1320,  kind: 'splitter', weight: 0.4 }, // M7: 22:00
+  { t: 1620,  kind: 'spitter',  weight: 0.4 }, // M7: 27:00
 ];
 // density spikes (30s of extra spawns): first at 12:00, repeats every 2 min
 const SPIKE_T = 720; // 12:00
 const SPIKE_EVERY = 120; // every 2 min after
-// active kinds at time T (all kinds whose unlock time has passed)
+// active kinds at time T (all kinds whose unlock time has passed).
+// STAGE VARIANT (M7): the bathroom shifts the whole script 60s EARLIER —
+// the same run, but the kitchen's 1:00 pressure hits you at 0:00. That is
+// the stage's difficulty, scripted not simulated (VS rule #5).
 function activeKinds(): string[] {
-  return SCRIPT.filter((s) => G.time >= s.t).map((s) => s.kind);
+  const shift = STAGES[G.stage]?.scriptShift || 0;
+  return SCRIPT.filter((s) => G.time >= s.t - shift).map((s) => s.kind);
 }
 // pick a kind by weight among active kinds
 function pickKind(): string {
@@ -736,17 +778,21 @@ const RUN_LEN = 1800; // 30:00 — the full director run (M3)
 let orbitPos: { x: number; z: number; r: number } | null = null;
 let orbit2Pos: { x: number; z: number; r: number } | null = null;
 let muteMsgT = 0; // "muted" banner timer (set by the M key)
+let paused = false; // M7: P toggles pause (play mode only)
 
 function update(): void {
   syncKeys();
   // mute toggle: M — works on title/play/levelup/dead/win (before mode gates)
   if (justPressed('m')) { const on = toggleMute(); G.flashT = 0.2; muteMsgT = on ? 0 : 1.4; }
+  // pause: P — play mode only (the soak harnesses run with __cap.step, which
+  // bypasses this gate, so pause never touches determinism tests)
+  if (justPressed('p') && G.mode === 'play') paused = !paused;
   if (G.mode === 'levelup') {
     const idx = keyIndex('1', '2', '3');
     if (idx >= 0) pickOption(idx);
   } else if (G.mode === 'title') {
-    // character select (1/2/3) + stage toggle (S) + start (SPACE)
-    const chIdx = keyIndex('1', '2', '3');
+    // character select (1/2/3/4) + stage toggle (S) + start (SPACE)
+    const chIdx = keyIndex('1', '2', '3', '4');
     if (chIdx >= 0) {
       const id = Object.keys(CHARACTERS)[chIdx];
       const ch = CHARACTERS[id];
@@ -762,6 +808,7 @@ function update(): void {
     if (justPressed(' ') || justPressed('enter')) startRun(G.seed);
   }
   if (G.mode !== 'play') { if (G.evolutionT > 0) G.evolutionT -= DT; return; }
+  if (paused) return;
 
   G.time += DT;
   const p = G.player;
@@ -794,6 +841,19 @@ function update(): void {
     const b = G.bullets[i];
     b.x += b.vx * DT; b.z += b.vz * DT; b.life -= DT;
     if (b.life <= 0 || b.x < 0 || b.x > WORLD_W || b.z < 0 || b.z > WORLD_H) { G.bullets.splice(i, 1); continue; }
+    // enemy bullets (M7 spitter gunk): hit the PLAYER, not enemies. Whether or
+    // not they connect, they skip the enemy/wall/boss/flush damage blocks.
+    if (b.enemy) {
+      if (Math.hypot(p.x - b.x, p.z - b.z) < PLAYER.radius + b.hitR && p.invuln <= 0) {
+        p.hp -= Math.max(1, b.dmg - G.armor); p.invuln = PLAYER.invulnAfterHit;
+        G.shake = Math.max(G.shake, 4);
+        sfx('hurt');
+        G.dmgNums.push({ x: p.x, z: p.z - 8, vy: -26, t: 0.8, txt: '-' + Math.max(1, b.dmg - G.armor), crit: true });
+        if (p.hp <= 0) { p.hp = 0; endRun(false, false); return; }
+        G.bullets.splice(i, 1);
+      }
+      continue;
+    }
     // pierce: each bullet may hit a given enemy once (or a few times for
     // piercing weapons) — a hitSet of enemy indices refreshed per-frame so a
     // bullet passing THROUGH an enemy doesn't re-damage it every frame.
@@ -870,8 +930,26 @@ function update(): void {
     if (e.hitT > 0) e.hitT -= DT;
     const dx = p.x - e.x, dz = p.z - e.z;
     const d = Math.hypot(dx, dz) || 1;
-    e.x += ((dx / d) * e.speed + e.kbx) * DT;
-    e.z += ((dz / d) * e.speed + e.kbz) * DT;
+    if (e.kind === 'spitter') {
+      // spitter (M7): holds its distance band — close in if far, back off if
+      // tight, strafe while in band — and lobs gunk shots at the player
+      let vx = 0, vz = 0;
+      if (d > 110) { vx = (dx / d) * e.speed; vz = (dz / d) * e.speed; }
+      else if (d < 60) { vx = -(dx / d) * e.speed; vz = -(dz / d) * e.speed; }
+      else {
+        const side = Math.sin(e.wob * 0.35) > 0 ? 1 : -1;
+        vx = (-dz / d) * e.speed * side; vz = (dx / d) * e.speed * side;
+      }
+      e.x += (vx + e.kbx) * DT; e.z += (vz + e.kbz) * DT;
+      e.spitCd = (e.spitCd === undefined ? 3 : e.spitCd) - DT;
+      if (e.spitCd <= 0 && d < 280) {
+        e.spitCd = 2.4 + G.rng();
+        G.bullets.push({ x: e.x, z: e.z, vx: (dx / d) * 130, vz: (dz / d) * 130, life: 3, dmg: 9, ang: Math.atan2(dz, dx), hitR: 4, kind: 'gunk', enemy: true });
+      }
+    } else {
+      e.x += ((dx / d) * e.speed + e.kbx) * DT;
+      e.z += ((dz / d) * e.speed + e.kbz) * DT;
+    }
     const kd = Math.exp(-4 * DT);
     e.kbx *= kd; e.kbz *= kd;
     if (d < e.radius + PLAYER.radius && p.invuln <= 0) {
@@ -926,6 +1004,20 @@ function update(): void {
           const a = (k / 6) * Math.PI * 2;
           G.zones.push({ x: b.x + Math.cos(a) * 30, z: b.z + Math.sin(a) * 30, r: 24, life: 1.5, tick: 0.5, dmg: 10 });
         }
+      }
+    } else if (b.kind === 'lintking') {
+      // THE LINT KING (M7): a slow fluff tank that sheds lint; at 50% HP it
+      // RAGES — faster, gunk rings, and spitter minions in pairs
+      if (!b.phase2 && b.hp < b.maxHp * 0.5) { b.phase2 = true; G.shake = 10; G.flashT = 0.4; sfx('boss'); }
+      const spd = b.phase2 ? b.speed * 1.4 : b.speed;
+      b.x += (dx / d) * spd * DT; b.z += (dz / d) * spd * DT;
+      if (b.chargeCd <= 0) {
+        b.chargeCd = b.phase2 ? 3.5 : 6;
+        for (let k = 0; k < 8; k++) {
+          const a = (k / 8) * Math.PI * 2 + b.wob;
+          G.bullets.push({ x: b.x, z: b.z, vx: Math.cos(a) * 100, vz: Math.sin(a) * 100, life: 2.5, dmg: 12, ang: a, hitR: 4, kind: 'gunk', enemy: true });
+        }
+        if (b.phase2 && G.enemies.length < 40) { spawnEnemy('spitter'); spawnEnemy('spitter'); }
       }
     } else {
       b.x += (dx / d) * b.speed * DT;
@@ -990,7 +1082,7 @@ function update(): void {
   for (let i = G.items.length - 1; i >= 0; i--) {
     const it = G.items[i];
     if (Math.hypot(it.x - p.x, it.z - p.z) < PLAYER.radius + 8) {
-      if (it.kind === 'gold') { G.gold += 30; }
+      if (it.kind === 'gold') { G.gold += Math.round(30 * G.stats.goldMult); }
       else { G.player.hp = Math.min(PLAYER.maxHp, G.player.hp + 30); }
       G.items.splice(i, 1);
       G.stats.itemTaken++;
@@ -1021,7 +1113,7 @@ function update(): void {
   if (G.time >= 150 && G.itemIdx < itemNext) { G.itemIdx = itemNext; spawnItem(); }
 
   // gems
-  const magnetR = PLAYER.magnetBase + (G.level - 1) * PLAYER.magnetPerLevel;
+  const magnetR = PLAYER.magnetBase * (1 + (CHARACTERS[G.char]?.magnetBonus || 0)) + (G.level - 1) * PLAYER.magnetPerLevel;
   for (let i = G.gems.length - 1; i >= 0; i--) {
     const g = G.gems[i];
     const dx = p.x - g.x, dz = p.z - g.z;
@@ -1056,13 +1148,14 @@ function endRun(won: boolean, flushed: boolean): void {
   if (won && G.time >= RUN_LEN) unlocks.push('survive5'); // bathroom stage
   if (G.time >= 600) unlocks.push('survive10'); // Hot Dog
   if (G.kills >= 500) unlocks.push('kills500'); // Avocado
+  if (G.bossKilled >= 3) unlocks.push('boss3'); // M7: Plunger
   let any = false;
   for (const u of unlocks) if (!META.unlocked.includes(u)) { META.unlocked.push(u); any = true; }
   if (any || G.gold > 0) saveMeta(META);
 }
 
 function clampNum(v: number): number { if (Number.isNaN(v)) { G.stats.nan++; return 0; } return v; }
-function startRun(seed: number): void { G = mkGame(seed); G.mode = 'play'; botDir = { x: 0, y: 0 }; orbitPos = null; orbit2Pos = null; lastEvo = null; }
+function startRun(seed: number): void { G = mkGame(seed); G.mode = 'play'; botDir = { x: 0, y: 0 }; orbitPos = null; orbit2Pos = null; lastEvo = null; paused = false; }
 // ---------- rendering ----------
 const canvas = (document.getElementById('c') as HTMLCanvasElement);
 const ctx = canvas.getContext('2d')!;
@@ -1087,6 +1180,8 @@ const ENEMY_SPR: Record<string, { spr: string; hit: string }> = {
   mop: { spr: 'mop', hit: 'mopHit' },
   stink: { spr: 'stink', hit: 'stinkHit' },
   sponge: { spr: 'sponge', hit: 'spongeHit' },
+  splitter: { spr: 'splitter', hit: 'splitterHit' }, // M7
+  spitter: { spr: 'spitter', hit: 'spitterHit' }, // M7
 };
 function enemySprite(kind: string, hit: boolean): any {
   const e = ENEMY_SPR[kind] || ENEMY_SPR.bubble;
@@ -1098,6 +1193,7 @@ const BOSS_SPR: Record<string, { spr: string; hit: string }> = {
   constipation: { spr: 'constipation', hit: 'constipationHit' },
   express: { spr: 'express', hit: 'expressHit' },
   sphincter: { spr: 'sphincter', hit: 'sphincterHit' },
+  lintking: { spr: 'lintking', hit: 'lintkingHit' }, // M7
 };
 function bossSprite(kind: string): { spr: any; hit: any } {
   const e = BOSS_SPR[kind] || BOSS_SPR.wind;
@@ -1122,7 +1218,7 @@ function render(t: number): void {
   }
   if (G.chest) drawSprite(ctx, SPRITES.chest, Math.round(G.chest.x - cx) - 6, Math.round(G.chest.z - cy) - 8, 0);
   for (const b of G.bullets) {
-    if (b.kind === 'plop') drawSprite(ctx, SPRITES.plop, Math.round(b.x - cx) - 4, Math.round(b.z - cy) - 4, 0);
+    if (b.kind === 'plop' || b.kind === 'gunk' || b.kind === 'spritz' || b.kind === 'stickyplop') drawSprite(ctx, SPRITES.plop, Math.round(b.x - cx) - 4, Math.round(b.z - cy) - 4, 0);
     else if (b.kind === 'superfart') drawScaled(ctx, SPRITES.bolt, Math.round(b.x - cx) - 8, Math.round(b.z - cy) - 3, 2, 0);
     else drawSprite(ctx, SPRITES.bolt, Math.round(b.x - cx), Math.round(b.z - cy), 0);
   }
@@ -1226,8 +1322,10 @@ function drawHud(t: number): void {
     bouncy: 'bouncy', stinkaura: 'stinkaura', fartbomb: 'fartbomb', turd: 'turd',
     superfart: 'bolt', stickyplop: 'stickyplop', halo: 'cracker', slakelake: 'plop',
     superball: 'bouncy', ghost: 'ghost', bigburp: 'fartbomb', moon: 'moon',
+    spritz: 'spritz', gunkfountain: 'plop', // M7
     meats: 'donut', quick: 'bolt', slippers: 'gem', tp: 'gem', breakfast: 'donut',
     gloves: 'bolt', widestink: 'cracker', sticky: 'plop', lucky: 'gem',
+    goldrush: 'goldbag', // M7
   };
   let ax = 6;
   for (const id of Object.keys(G.weapons)) {
@@ -1272,9 +1370,13 @@ function drawHud(t: number): void {
     muteMsgT -= DT;
     if (Math.floor(t * 4) % 2 === 0) center('MUTED [M]', 66, 2);
   }
+  // pause banner (P key): while paused, the sim is frozen — say so
+  if (paused && G.mode === 'play') {
+    if (Math.floor(t * 3) % 2 === 0) center('PAUSED [P]', 66, 1);
+  }
 
   if (G.mode === 'dead') overlay(G.flushed ? 'FLUSHED' : 'SOUPED', `lv${G.level}  kills ${G.kills}  ${fmt(G.time)}`, 'press SPACE to retry', t, true);
-  else if (G.mode === 'win') overlay('KITCHEN CLEARED', `lv${G.level}  kills ${G.kills}  gold ${G.gold}`, 'press SPACE to go again', t, false);
+  else if (G.mode === 'win') overlay((STAGES[G.stage]?.name || 'KITCHEN').toUpperCase() + ' CLEARED', `lv${G.level}  kills ${G.kills}  gold ${G.gold}`, 'press SPACE to go again', t, false);
   else if (G.mode === 'levelup') drawLevelUp();
 }
 function overlay(title: string, sub1: string, sub2: string, t: number, dark: boolean): void {
@@ -1352,8 +1454,9 @@ function drawTitle(t: number): void {
   const bathLine = META.unlocked.includes(STAGES.bathroom.unlock) ? 'B' : '?';
   center('STAGE: ' + (selectedStage === 'kitchen' ? 'KITCHEN' : 'BATHROOM') + `  [S] (${stageLine}${bathLine})`, 164, 0);
   center('move: WASD or arrows', 176, 0);
-  center('survive the 30:00', 188, 0);
-  center('gold bank: ' + META.gold, 200, 0);
+  center('P: pause   M: mute', 188, 0);
+  center('survive the 30:00', 200, 0);
+  center('gold bank: ' + META.gold, 212, 0);
   for (let i = 0; i < 3; i++) {
     const bx = (t * 24 + i * 120) % (VIEW_W + 24) - 12;
     const by = 16 + i * 10 + Math.round(Math.sin(t * 3 + i) * 4);
@@ -1407,7 +1510,7 @@ const win = window;
       dmgMult: +G.stats.dmgMult.toFixed(3), cdMult: +G.stats.cdMult.toFixed(3),
       speedMult: +G.stats.speedMult.toFixed(3), xpMult: +G.stats.xpMult.toFixed(3),
       projSpeedMult: +G.stats.projSpeedMult.toFixed(3), areaMult: +G.stats.areaMult.toFixed(3),
-      durationMult: +G.stats.durationMult.toFixed(3), maxHp: G.stats.maxHp,
+      durationMult: +G.stats.durationMult.toFixed(3), goldMult: +G.stats.goldMult.toFixed(3), maxHp: G.stats.maxHp,
     },
   }),
   xpCurve: (lvl: number) => xpToNext(lvl),

@@ -1,6 +1,6 @@
 // M4 SOAK — content completion.
 // Part A: M1-M3 regression (XP curve, determinism, director schedule).
-// Part B: THE CONTENT — all 8 weapons fire, all 9 passives scale, ALL 8
+// Part B: THE CONTENT — all 9 weapons fire, all 10 passives scale, ALL 9
 // evolutions resolve (each base maxed + its passive + chest), characters
 // start with their weapon + bonus, unlock math verified, stage 2 variant
 // works, meta banks gold.
@@ -49,7 +49,7 @@ await page.evaluate(() => window.__cap.unfreeze());
 
 // ============ PART B: the content ============
 // B1: all 8 base weapons fire
-for (const id of ['fartwhip', 'plopcannon', 'crackerring', 'puddle', 'bouncy', 'stinkaura', 'fartbomb', 'turd']) {
+for (const id of ['fartwhip', 'plopcannon', 'crackerring', 'puddle', 'bouncy', 'stinkaura', 'fartbomb', 'turd', 'spritz']) {
   const r = await page.evaluate((wid) => {
     const c = window.__cap;
     c.restartPlay(555); c.freeze();
@@ -84,6 +84,8 @@ const passiveProbe = await page.evaluate(() => {
   out.slippers = c.state().stats.speedMult;
   c.givePassive('tp', 5);
   out.tp = c.state().stats.xpMult;
+  c.givePassive('goldrush', 5);
+  out.goldrush = c.state().stats.goldMult; // M7
   return out;
 });
 ok(passiveProbe.breakfast === 175, `breakfast x3 → maxHp 175 (got ${passiveProbe.breakfast})`);
@@ -94,6 +96,7 @@ ok(Math.abs(passiveProbe.meats - 1.3) < 0.001, `meats x3 → dmg 1.30 (got ${pas
 ok(Math.abs(passiveProbe.quick - 0.84) < 0.001, `quick x2 → cd 0.84 (got ${passiveProbe.quick})`);
 ok(Math.abs(passiveProbe.slippers - 1.1) < 0.001, `slippers x1 → speed 1.10 (got ${passiveProbe.slippers})`);
 ok(Math.abs(passiveProbe.tp - 1.4) < 0.001, `tp x5 → xp 1.40 (got ${passiveProbe.tp})`);
+ok(Math.abs(passiveProbe.goldrush - 1.75) < 0.001, `goldrush x5 → gold 1.75 (M7, got ${passiveProbe.goldrush})`);
 
 // B3: ALL 8 evolutions resolve (base maxed + passive + chest)
 const EVO_PAIRS = [
@@ -105,6 +108,7 @@ const EVO_PAIRS = [
   ['stinkaura', 'lucky', 'ghost'],
   ['fartbomb', 'breakfast', 'bigburp'],
   ['turd', 'slippers', 'moon'],
+  ['spritz', 'tp', 'gunkfountain'], // M7: the 9th line
 ];
 for (const [base, passive, to] of EVO_PAIRS) {
   const r = await page.evaluate((ar) => {
@@ -142,10 +146,12 @@ const charProbe = await page.evaluate(() => {
   // locked chars refuse selection
   out.hotdogLocked = c.selectChar('hotdog');
   out.avocadoLocked = c.selectChar('avocado');
+  out.plungerLocked = c.selectChar('plunger');
   // unlock via meta
-  c.metaGive('survive10'); c.metaGive('kills500');
+  c.metaGive('survive10'); c.metaGive('kills500'); c.metaGive('boss3');
   out.hotdogOk = c.selectChar('hotdog');
   out.avocadoOk = c.selectChar('avocado');
+  out.plungerOk = c.selectChar('plunger');
   // each character's start weapon + bonus
   const st = c.state();
   out.char = st.char;
@@ -158,16 +164,21 @@ const charProbe = await page.evaluate(() => {
   c.selectChar('avocado');
   c.restart(7); out.weaponsAvocado = c.state().weapons;
   out.armorAvocado = c.state().armor;
+  c.selectChar('plunger');
+  c.restart(7); out.weaponsPlunger = c.state().weapons; // M7
   return out;
 });
 ok(charProbe.hotdogLocked.err === 'locked: survive10', `hotdog locked until survive10 (${JSON.stringify(charProbe.hotdogLocked)})`);
 ok(charProbe.avocadoLocked.err === 'locked: kills500', `avocado locked until kills500 (${JSON.stringify(charProbe.avocadoLocked)})`);
+ok(charProbe.plungerLocked.err === 'locked: boss3', `plunger locked until boss3 (M7) (${JSON.stringify(charProbe.plungerLocked)})`);
 ok(charProbe.hotdogOk.ok === true, 'hotdog selectable after unlock');
 ok(charProbe.avocadoOk.ok === true, 'avocado selectable after unlock');
+ok(charProbe.plungerOk.ok === true, 'plunger selectable after unlock (M7)');
 ok(charProbe.weaponsCrouton.fartwhip === 1, 'crouton starts Fart Whip');
 ok(charProbe.weaponsHotdog.plopcannon === 1, 'hotdog starts Plop Cannon');
 ok(charProbe.weaponsAvocado.puddle === 1, 'avocado starts Puddle');
 ok(charProbe.armorAvocado === 1, 'avocado has +1 armor');
+ok(charProbe.weaponsPlunger.spritz === 1, 'plunger starts Gunk Spritz (M7)');
 
 // B5: stage 2 — unlock + tile variant + script shift
 const stageProbe = await page.evaluate(() => {
@@ -178,10 +189,23 @@ const stageProbe = await page.evaluate(() => {
   const okr = c.selectStage('bathroom');
   c.restart(7);
   const st = c.state();
-  return { locked, okr, stage: st.stage };
+  // M7: the bathroom shifts the whole script 60s EARLIER — droplet (a 1:00
+  // kitchen kind) must be active at t=0 on the bathroom
+  c.clearEnemies();
+  for (let i = 0; i < 12; i++) c.spawn(1);
+  const bathKinds0 = (c.lastKinds() || []).join(',');
+  // ...and the kitchen must NOT (control check)
+  c.selectStage('kitchen');
+  c.restart(7);
+  c.clearEnemies();
+  for (let i = 0; i < 12; i++) c.spawn(1);
+  const kitKinds0 = (c.lastKinds() || []).join(',');
+  return { locked, okr, stage: st.stage, bathKinds0, kitKinds0 };
 });
 ok(stageProbe.locked.err === 'locked: survive5', `bathroom locked until survive5 (${JSON.stringify(stageProbe.locked)})`);
 ok(stageProbe.okr.ok === true && stageProbe.stage === 'bathroom', 'bathroom selectable after unlock, run starts on it');
+ok(stageProbe.bathKinds0.includes('droplet'), `bathroom shifts the script 60s early: droplet active at 0:00 (M7, got ${stageProbe.bathKinds0})`);
+ok(!stageProbe.kitKinds0.includes('droplet'), `kitchen control: no droplet at 0:00 (got ${stageProbe.kitKinds0})`);
 
 // B6: meta banks gold
 const metaProbe = await page.evaluate(() => {
@@ -227,6 +251,15 @@ await page.evaluate(() => {
       const s = cap.state();
       if (s.mode !== 'play') return;
       const W = s.world.w, H = s.world.h;
+      // CHEST SEEKING (M7): the evolution resolves by WALKING ONTO the chest —
+      // without this the pickup is kiting-path luck (hotdog/avocado's paths
+      // crossed the chest on some kits and not others). Boss is gone (chest
+      // only exists post-boss-death): go grab it.
+      if (s.chest && !s.boss) {
+        const cdx = s.chest.x - s.x, cdz = s.chest.z - s.z;
+        const cd = Math.hypot(cdx, cdz) || 1;
+        if (cd < 220) { cap.move(cdx / cd, cdz / cd); return; }
+      }
       const near = cap.enemies(16).filter((e) => e.d < 100);
       let wx = 0, wz = 0, wsum = 0;
       for (const e of near) { const w = 1 - e.d / 100; wx += e.x * w; wz += e.z * w; wsum += w; }
@@ -273,12 +306,15 @@ await page.evaluate(() => {
       if (s.hp < 30) pick = o.findIndex((x) => x.id === 'hp');
       // STRICT evolution path: start weapon max → its evolution passive →
       // whip-max (crouton's main DPS) → ring (defense) → diversify.
+      // The evo passive must land BEFORE whip-max: a chest resolves the evo
+      // only if base is maxed AND the passive is held — for spritz (plunger)
+      // that passive is TP Crown, and grabbing whip levels first lets the
+      // first chest (5:00 boss) fall through to gold+heal.
       const sw = window.__startWeapon;
-      if (pick < 0 && sw && sw !== 'crackerring') pick = o.findIndex((x) => x.id === sw && x.lvl < 8);
       if (pick < 0 && sw && window.__evoPassive && !s.passives[window.__evoPassive]) pick = o.findIndex((x) => x.id === window.__evoPassive);
-      if (pick < 0 && sw && window.__evoPassive) pick = o.findIndex((x) => x.id === window.__evoPassive && (s.passives[window.__evoPassive] || 0) < 1);
+      if (pick < 0 && sw && sw !== 'crackerring') pick = o.findIndex((x) => x.id === sw && x.lvl < 8);
       if (pick < 0 && sw !== 'fartwhip') pick = o.findIndex((x) => x.id === 'fartwhip' && x.lvl < 8);
-      if (pick < 0) pick = o.findIndex((x) => x.id === 'crackerring'); // fresh OR upgrade (head start grants ring 1)
+      if (pick < 0) pick = o.findIndex((x) => x.id === 'crackerring'); // fresh OR upgrade (head start grants ring 8)
       if (pick < 0) pick = o.findIndex((x) => x.kind === 'passive' && x.lvl === 1);
       if (pick < 0) pick = o.findIndex((x) => x.kind === 'weapon' && !s.weapons[x.id]);
       if (pick < 0) pick = 0;
@@ -300,11 +336,11 @@ await page.evaluate(() => {
 await page.evaluate(() => window.__cap.freeze());
 
 const charRuns = [];
-for (const chId of ['crouton', 'hotdog', 'avocado']) {
+for (const chId of ['crouton', 'hotdog', 'avocado', 'plunger']) {
   await page.evaluate(() => {
     const c = window.__cap;
     c.metaReset();
-    c.metaGive('survive10'); c.metaGive('kills500');
+    c.metaGive('survive10'); c.metaGive('kills500'); c.metaGive('boss3');
   });
   const sel = await page.evaluate((chid) => window.__cap.selectChar(chid), chId);
   const startW = await page.evaluate((chid) => {
@@ -318,13 +354,15 @@ for (const chId of ['crouton', 'hotdog', 'avocado']) {
   // character's OWN evolution in-play.
   await page.evaluate((sw) => {
     const c = window.__cap;
-    const pair = { fartwhip: ['quick', 'superfart'], plopcannon: ['sticky', 'stickyplop'], puddle: ['meats', 'slakelake'] }[sw];
+    const pair = { fartwhip: ['quick', 'superfart'], plopcannon: ['sticky', 'stickyplop'], puddle: ['meats', 'slakelake'], spritz: ['tp', 'gunkfountain'] }[sw];
     window.__evoPassive = pair ? pair[0] : null;
     if (sw) c.giveWeaponNow(sw, 8);
     if (window.__evoPassive) c.givePassiveNow(window.__evoPassive, 1);
-    // kit head start: the ring (kiting defense, per M2/M3 bot precedent) —
-    // otherwise the bot needs 3+ level-up lottery offers to get it
-    c.giveWeaponNow('crackerring', 1);
+    // kit head start: the MAXED ring (kiting defense — ring 1 is not enough
+    // to kill the First Wind, the bot kites it past the 10-min horizon and
+    // the evolution chest never gets picked up; the M2/M3 bot precedent is
+    // a maxed ring)
+    c.giveWeaponNow('crackerring', 8);
     return c.state().mode;
   }, startW);
   const t0 = Date.now();
@@ -345,6 +383,7 @@ ok(charRuns.every((r) => r.mode === 'win' || r.time > 550), `every character rea
 ok(charRuns[0].lastEvo && charRuns[0].lastEvo.base === 'fartwhip' && charRuns[0].lastEvo.to === 'superfart', `crouton evolved whip → superfart in-run (${JSON.stringify(charRuns[0].lastEvo)})`);
 ok(charRuns[1].lastEvo && charRuns[1].lastEvo.base === 'plopcannon' && charRuns[1].lastEvo.to === 'stickyplop', `hotdog evolved plop → stickyplop in-run (${JSON.stringify(charRuns[1].lastEvo)})`);
 ok(charRuns[2].lastEvo && charRuns[2].lastEvo.base === 'puddle' && charRuns[2].lastEvo.to === 'slakelake', `avocado evolved puddle → slakelake in-run (${JSON.stringify(charRuns[2].lastEvo)})`);
+ok(charRuns[3].lastEvo && charRuns[3].lastEvo.base === 'spritz' && charRuns[3].lastEvo.to === 'gunkfountain', `plunger evolved spritz → gunkfountain in-run (M7, ${JSON.stringify(charRuns[3].lastEvo)})`);
 
 // console clean over ALL runs
 ok(errs.length === 0, `console clean across all runs (${errs.slice(0, 2).join(' | ')})`);

@@ -1,7 +1,7 @@
 // M3 SOAK — the director.
 // Part A: M1/M2 regression (XP curve, determinism, weapon framework).
-// Part B: director mechanics — script unlocks 6 enemy types on schedule,
-// wave bursts fire, spikes fire, 5 bosses spawn on schedule with their own
+// Part B: director mechanics — script unlocks 8 enemy types on schedule,
+// wave bursts fire, spikes fire, 6 bosses spawn on schedule with their own
 // behaviors, the Spasm Wall closes and can be broken, stage items spawn,
 // THE FINAL FLUSH resolves both ways (killable → win; touch → flushed).
 // Part C: THE REAL TEST — a full 30:00 bot run × 5 seeds. The bot must
@@ -74,10 +74,12 @@ const kindProbe2 = await page.evaluate(() => {
   const c = window.__cap;
   const out = {};
   c.restart(88); c.freeze();
-  for (const t of [0, 60, 120, 420, 720, 1020]) {
+  for (const t of [0, 60, 120, 420, 720, 1020, 1320, 1620]) {
     c.set('time', t);
     c.clearEnemies();
-    for (let i = 0; i < 12; i++) c.spawn(1);
+    // 48 spawns, not 12: the M7 kinds carry ~11% weight each — 12 rolls has a
+    // ~24% chance of zero (flaky probe); 48 rolls makes P(zero) ≈ 0.04%
+    for (let i = 0; i < 48; i++) c.spawn(1);
     out[t] = (c.lastKinds() || []).join(',');
   }
   return out;
@@ -88,6 +90,8 @@ ok((kindProbe2[120] || '').includes('crumb') && !(kindProbe2[60] || '').includes
 ok((kindProbe2[420] || '').includes('mop') && !(kindProbe2[120] || '').includes('mop'), 'script: mop unlocks at 7:00');
 ok((kindProbe2[720] || '').includes('stink') && !(kindProbe2[420] || '').includes('stink'), 'script: stink unlocks at 12:00');
 ok((kindProbe2[1020] || '').includes('sponge') && !(kindProbe2[720] || '').includes('sponge'), 'script: sponge unlocks at 17:00');
+ok((kindProbe2[1320] || '').includes('splitter') && !(kindProbe2[1020] || '').includes('splitter'), 'script: splitter unlocks at 22:00 (M7)');
+ok((kindProbe2[1620] || '').includes('spitter') && !(kindProbe2[1320] || '').includes('spitter'), 'script: spitter unlocks at 27:00 (M7)');
 
 // B2: wave bursts fire on schedule
 const waveProbe = await page.evaluate(() => {
@@ -105,7 +109,7 @@ ok(waveProbe.afterAfter > waveProbe.before, 'wave burst: enemies jump after 1:00
 const bossSched = await page.evaluate(() => {
   const c = window.__cap;
   const out = [];
-  for (let bi = 0; bi < 5; bi++) {
+  for (let bi = 0; bi < 6; bi++) {
     const sched = c.bossSchedule();
     const ev = sched[bi];
     c.restartPlay(999);
@@ -117,8 +121,8 @@ const bossSched = await page.evaluate(() => {
   }
   return out;
 });
-ok(bossSched.every((s) => !s.includes('NOT SEEN')), 'boss schedule: all 5 bosses spawn on their script time');
-ok(bossSched[0].includes('THE FIRST WIND') && bossSched[1].includes('COLONEL C') && bossSched[2].includes('THE CONSTIPATION') && bossSched[3].includes('THE DIARRHEA EXPRESS') && bossSched[4].includes('MR. SPHINCTER'), 'boss schedule: names in order');
+ok(bossSched.every((s) => !s.includes('NOT SEEN')), 'boss schedule: all 6 bosses spawn on their script time');
+ok(bossSched[0].includes('THE FIRST WIND') && bossSched[1].includes('COLONEL C') && bossSched[2].includes('THE CONSTIPATION') && bossSched[3].includes('THE DIARRHEA EXPRESS') && bossSched[4].includes('MR. SPHINCTER') && bossSched[5].includes('THE LINT KING'), 'boss schedule: names in order (M7: + THE LINT KING)');
 
 // B4: Spasm Wall — mechanics: spawns, closes in, breakable (schedule itself is B3)
 const wallProbe = await page.evaluate(() => {

@@ -47,7 +47,7 @@ await page.evaluate(() => window.__cap.unfreeze());
 
 // ============ PART B: weapon framework ============
 // B1: every weapon fires at least once when it has a target
-for (const id of ['fartwhip', 'plopcannon', 'crackerring', 'puddle']) {
+for (const id of ['fartwhip', 'plopcannon', 'crackerring', 'puddle', 'spritz']) {
   await page.evaluate((id) => {
     const c = window.__cap;
     c.restart(555);
