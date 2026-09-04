@@ -118,30 +118,49 @@ await page.evaluate(() => {
       const o = s.options;
       let pick = -1;
       if (s.hp < 30) pick = o.findIndex((x) => x.id === 'hp');
-      // DIVERSIFIED build (the intended playstyle, per the balance-diag A/B):
-      // ring up for survival, add 2nd/3rd weapons for clear-rate, THEN scale.
-      // This is what a real player does. The DPS-priority build (max one
-      // weapon first) is the deliberately-suboptimal skill floor — it never
-      // reaches bullet heaven and dies in ~2 min.
-      // M9: the DECENT PLAYER build (ring first, 3-weapon kit, then scale).
-      // Two measured traps this avoids:
-      //  (a) pure new-weapon-first (the M8 pick) scatters across 6+ weapons
-      //      on the 12-weapon pool and never scales anything -> no heaven.
-      //  (b) pure owned-upgrade-first snowballs the START weapon and skips
-      //      the ring entirely -> no early defense, dead at lv 4-7 (measured
-      //      1/10 heaven, 8/10 dead < 200s).
-      // So: (1) the ring up to 6 for early defense, (2) build a 3-DPS kit
-      //      while the kit is small, (3) scale owned weapons once the kit
-      //      exists, (4) passive upgrades, (5) ring past 6, (6) fill in.
-      // s.weapons is {id: lvl} — owned only; a fresh option has no entry, so
-      // "owned" tests must use s.weapons[x.id], never x.lvl (a fresh option
-      // carries lvl:1, which fooled the M9a pick change into a no-op).
-      if (pick < 0) pick = o.findIndex((x) => x.id === 'crackerring' && x.lvl < 6);
-      if (pick < 0 && !s.weapons.crackerring) pick = o.findIndex((x) => x.id === 'crackerring');
+      // M10i: tight early game + free superfart ramp. The M10h official gate
+      // (test/balance.mjs) hit the named deliverables — heaven 8/10 (median
+      // 7.4min), boss median 2 — but death rate stayed 10/10, with 6/10 dead
+      // at THE CONSTIPATION (900–935s) carrying superfart:1. Two trace
+      // patterns, both ladder shape:
+      //  (1) ring-8 rung starvation: the ring (now ×4 common) flooded the
+      //      fresh pool, so its 3→8 upgrades occupied the 3-option draw and
+      //      superfart 1→8 (ranked after the ring) rarely appeared — the
+      //      evolved line sat at lvl 1 into the 2000hp wall.
+      //  (2) pre-evo kit scatter: the dpsCount<3 slot pulled 2nd/3rd weapons
+      //      (bouncy/stinkaura) BEFORE the evo line finished — 1618 at 900s:
+      //      whip 8 + bouncy 8 + quick 2, no evo. A new weapon before the
+      //      evo is pure pick-tax on the build's backbone.
+      // M10i: the ring is acquired + 3 pre-evo (the boss-window defense),
+      // kit is locked until the evo fires, and post-evo the superfart ramp
+      // outranks the ring (ring continues to 8 only AFTER superfart 8).
+      // Ladder: ring(acquire)→ring 3→whip 8→quick(evo)→[evo fired] superfart 8
+      //   → ring 8 → quick 5 → scale owned → kit → owned passives → fill.
+      if (pick < 0 && !s.weapons.crackerring) pick = o.findIndex((x) => x.id === 'crackerring'); // acquire ring (forced common guarantees it)
+      if (pick < 0 && !s.evolved && s.weapons.crackerring && s.weapons.crackerring < 3) pick = o.findIndex((x) => x.id === 'crackerring'); // ring to 3 pre-evo: boss-window defense
+      // base evo line ONLY while the evo hasn't fired: once superfart exists,
+      // the base whip is a RE-ADD (fresh option) — the M10g gate measured the
+      // re-add bug directly: seeds 42/27182 at 1500s ran superfart:1 +
+      // fartwhip:8, i.e. the ladder sprinted the consumed base line while the
+      // evolved line stalled at lvl 1. Same guard the m3 bot ships.
+      if (pick < 0 && !s.weapons.superfart) pick = o.findIndex((x) => x.id === 'fartwhip');       // whip 1→8: the evo line
+      if (pick < 0 && !(s.passives.quick)) pick = o.findIndex((x) => x.id === 'quick');          // the evo gate (×2 common now)
+      if (pick < 0) pick = o.findIndex((x) => x.id === 'superfart' && x.lvl < 8);                // post-evo: the evolved line outranks everything (ring deferred past it)
+      if (pick < 0 && s.weapons.crackerring && s.weapons.crackerring < 8) pick = o.findIndex((x) => x.id === 'crackerring'); // ring 3→8 post-evo: the AoE wall
+      if (pick < 0 && s.evolved && s.passives.quick && s.passives.quick < 5) pick = o.findIndex((x) => x.id === 'quick'); // quick 5 = global cd cut (post-evo only: the gate quick must survive to be consumed)
+      // SUSTAIN PILLAR (M10k): the M10j2 gate (heaven 10/10, boss median 4,
+      // death 10/10) measured every death at the endgame boss wall — 6/10 at
+      // MR. SPHINCTER (1500s, 2600hp/18dmg), 2 at the 20-min population spike,
+      // HP pressure 100% through 25 min. The bot's DPS out-cleared the spawn
+      // curve (10/10 heaven) but its 100 max HP couldn't out-tank the 25-min
+      // boss gauntlet. A decent player grabs sustain for the endgame: Big
+      // Breakfast (+25 max HP x3 = +75). Stacked post-evo, it's a survivability
+      // pillar, not a DPS tax — the evo/ring/cd are already locked by then.
+      if (pick < 0 && s.evolved && (s.passives.breakfast || 0) < 3) pick = o.findIndex((x) => x.id === 'breakfast'); // breakfast x3 = +75 max HP for the boss gauntlet
+      if (pick < 0) pick = o.findIndex((x) => x.kind === 'weapon' && s.weapons[x.id] && x.lvl < 8 && (x.id !== 'fartwhip' || !s.weapons.superfart)); // scale other owned lines (never the re-added base whip)
       const dpsCount = Object.keys(s.weapons).filter((k) => k !== 'crackerring').length;
-      if (pick < 0 && dpsCount < 3) pick = o.findIndex((x) => x.kind === 'weapon' && !s.weapons[x.id]);
-      if (pick < 0) pick = o.findIndex((x) => x.kind === 'weapon' && s.weapons[x.id] && x.lvl < 8);
-      if (pick < 0) pick = o.findIndex((x) => x.kind === 'passive' && s.passives[x.id]);
+      if (pick < 0 && s.evolved && dpsCount < 3) pick = o.findIndex((x) => x.kind === 'weapon' && !s.weapons[x.id]);  // kit: locked until the evo fired, then 2nd/3rd line for clear rate
+      if (pick < 0) pick = o.findIndex((x) => x.kind === 'passive' && s.passives[x.id]);                 // owned passives (meats etc.)
       if (pick < 0) pick = o.findIndex((x) => x.id === 'crackerring' && x.lvl < 8);
       if (pick < 0) pick = o.findIndex((x) => x.kind === 'weapon' && !s.weapons[x.id]);
       if (pick < 0) pick = o.findIndex((x) => x.kind === 'passive');

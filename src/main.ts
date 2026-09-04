@@ -352,10 +352,24 @@ function passiveCount(): number { return Object.keys(G.passives).length; }
 function buildOptions(): ItemOpt[] {
   const opts: ItemOpt[] = [];
   for (const id of Object.keys(WEAPONS)) {
-    if (WEAPONS[id].evolved) continue;
     const w = G.weapons[id];
-    if (w) { if (w.lvl < WEAPONS[id].maxLvl) opts.push({ kind: 'weapon', id, name: WEAPONS[id].name, desc: 'Upgrade ' + WEAPONS[id].name, lvl: w.lvl }); }
-    else if (weaponCount() < 6) opts.push({ kind: 'weapon', id, name: WEAPONS[id].name, desc: WEAPONS[id].desc, lvl: 1 });
+    if (w) {
+      // OWNED weapon (evolved or base) offered up to maxLvl. M10k fix: the
+      // pre-M10 `if (WEAPONS[id].evolved) continue;` dropped the evolved
+      // weapon from the pool entirely, so superfart was stuck at lvl 1 for the
+      // rest of every NATURAL run (M10j2 gate: 6/10 died at MR. SPHINCTER
+      // 1500s with superfart:1 + a maxed secondary line; m3/m4 were immune
+      // only because their bots head-start superfart at 8 via giveWeaponNow).
+      // The evo'd weapon IS the build — it must be levelable to 8 (VS
+      // behavior). weaponCount() (the 6-weapon cap) still excludes evolved.
+      if (w.lvl < WEAPONS[id].maxLvl) opts.push({ kind: 'weapon', id, name: WEAPONS[id].name, desc: 'Upgrade ' + WEAPONS[id].name, lvl: w.lvl });
+    }
+    else if (weaponCount() < 6 && !WEAPONS[id].evolved) {
+      // FRESH base weapons respect the 6-weapon cap; evolved weapons are never
+      // offered fresh (you evolve INTO them — a fresh evolved option would be
+      // an un-evolvable orphan, e.g. a second superfart with no whip to consume).
+      opts.push({ kind: 'weapon', id, name: WEAPONS[id].name, desc: WEAPONS[id].desc, lvl: 1 });
+    }
   }
   for (const id of Object.keys(PASSIVES)) {
     const lvl = G.passives[id] || 0;
@@ -379,15 +393,43 @@ function buildOptions(): ItemOpt[] {
   // don't dilute).
   const shuf = (a: ItemOpt[]) => { for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(G.rng() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; };
   const ownedUp = opts.filter((o) => (o.kind === 'weapon' && G.weapons[o.id]) || (o.kind === 'passive' && G.passives[o.id]));
-  // VS-true rarity (M9): the ring is a COMMON item (weight 3 in the fresh
-  // bag). With 12 weapons the even lottery starved it — measured: 7/10 seeds
-  // ring-less, dead before 5:00 (M8 pool-dilution regression). ×3 restores
-  // roughly the M7 acquisition rate without touching the phase split.
-  const freshBag = opts.filter((o) => !ownedUp.includes(o)).flatMap((o) => o.id === 'crackerring' ? [o, o, o] : [o]);
+  // VS-true rarity (M10): the ring is a COMMON item (weight 4 in the fresh
+  // bag) — M9's ×3 still left 7/10 seeds ring-less in the M10c probe, and the
+  // 60–130s window (60s wave + bubble swarms) is lethal for a whip-only
+  // build (directional beam, no orbiting AoE). ×4: P(ring by lv-up 5) ≈ 41%.
+  // PASSIVES are the common tier too (weight 2): the M10g gate showed the
+  // evo gate (quick) never landed in some runs — the evo is the build's
+  // backbone (VS core loop), so its gate can't be a 1/18 lottery. ×2 doubles
+  // passive offer rate without diluting the weapon lines.
+  const freshBag = opts
+    .filter((o) => !ownedUp.includes(o))
+    .flatMap((o) => (o.id === 'crackerring' ? [o, o, o, o] : o.kind === 'passive' ? [o, o] : [o]));
   const fresh = shuf(freshBag).filter((o, i, a) => a.findIndex((x) => x.id === o.id) === i);
-  const owned = shuf(ownedUp);
+  // EVOLVED-WEAPON PIN (M10k): once the build has evolved, the evolved weapon
+  // is its signature DPS — pin it into slot 0 of the owned-upgrade half so it
+  // is offered in every draw until maxed. The M10j2 gate (test/balance.mjs)
+  // measured 6/10 deaths at MR. SPHINCTER (1500s) carrying superfart:1 with a
+  // SECONDARY line maxed (plopcannon 8, bouncy 8, turd 7) — in the even
+  // owned-upgrade shuffle the evo'd line is 1 of ~6 upgrades competing for 2
+  // slots, so the bot filled the other lines instead. VS behavior: after the
+  // chest you level the evolved weapon first; nothing outranks it. Only the
+  // unmaxed evolved line pins (a maxed one isn't offered anyway), and the rest
+  // is a plain shuffle so no other item's relative odds change.
+  const evolvedOpts = ownedUp.filter((o) => WEAPONS[o.id]?.evolved && (G.weapons[o.id]?.lvl || 0) < WEAPONS[o.id].maxLvl);
+  const restOpts = ownedUp.filter((o) => !evolvedOpts.includes(o));
+  const owned = [...evolvedOpts, ...shuf(restOpts)];
   const ownedWeaponCount = Object.keys(G.weapons).filter((id) => !WEAPONS[id].evolved && G.weapons[id]).length;
-  const freshSlots = ownedWeaponCount < 3 ? 2 : 1;
+  // Phase split (M9→M10j): 2 fresh + 1 upgrade while the kit is <2 weapons
+  // (the very first picks: the ring + a stat line); 1 fresh + 2 upgrades from
+  // 2 weapons up. M9's "<3" threshold was measured by the M10i probe
+  // (test/probe-balance.mjs): with start-whip + ring the draw stayed
+  // 2-fresh + 1-upgrade, so the whip's 7 upgrades and the ring's 2 shared ONE
+  // upgrade slot (50/50 per draw) — whip only reached lvl 3-4 by 300s, the
+  // evo (whip 8 + quick) never armed before the first boss chest, and 6/10
+  // seeds died at THE CONSTIPATION with superfart:1 or no evo. From 2 owned
+  // weapons, 2 upgrade slots scale the evo line ~2x faster; the single fresh
+  // slot still delivers the evo gate (quick) and the post-evo kit.
+  const freshSlots = ownedWeaponCount < 2 ? 2 : 1;
   let result: ItemOpt[];
   if (fresh.length >= freshSlots) {
     result = fresh.slice(0, freshSlots).concat(ownedUp.length ? owned : fresh.slice(freshSlots)).slice(0, 3);
@@ -398,7 +440,60 @@ function buildOptions(): ItemOpt[] {
   }
   // de-dup by id (guard against a single-option pool)
   const seen = new Set<string>();
-  result = result.filter((o) => { if (seen.has(o.id)) return false; seen.add(o.id); return true; });
+  result = result.filter((o) => { if (seen.has(o.id)) return false; seen.add(o.id); return o; });
+  // EVO-GATE GUARANTEE (M10j): once a base weapon is COMMITTED (lvl >= 6 — the
+  // build is clearly going for that line), one fresh slot is always its evo
+  // passive until that passive is owned. The M10j probe (test/probe-balance.mjs)
+  // measured the wall this removes: with the 1-fresh slot and ×2 passives,
+  // quick's offer rate is ~4.5%/level-up, so 6/10 seeds maxed whip 8 + ring 8
+  // with zero passives and hit COLONEL C / THE CONSTIPATION evo-less. The
+  // evolution is the game's core loop (VS: the chest resolves your evo), so
+  // its gate can't ride the fresh-item lottery. Mirrors the ring's forced
+  // common below; fires once per line (after the gate is consumed by the evo,
+  // a second base line can re-arm it for its own gate).
+  if (!G.evolved) {
+    // the HIGHEST-LEVEL owned base line (its evo passive missing) is the
+    // committed build — force ITS gate into a fresh slot. The ring is excluded:
+    // it's a utility/defense item, and the M10j gate run measured the head
+    // start's ring-8 (m4 avocado) arming crackerring→halo ahead of the
+    // character's own line (evoReady() resolves in table order, and the ring
+    // sits above puddle). The ring's halo evo stays reachable the normal way
+    // — it just can't hijack a character's own evolution.
+    let gateId: string | null = null;
+    let gateLvl = 0;
+    for (const id of Object.keys(WEAPONS)) {
+      const w = WEAPONS[id];
+      if (w.evolved || !w.evoWith || !w.evolvesTo) continue;
+      if (id === 'crackerring') continue;
+      const lvl = G.weapons[id]?.lvl || 0;
+      if (lvl >= 6 && !(G.passives[w.evoWith] || 0) && lvl > gateLvl) { gateLvl = lvl; gateId = w.evoWith; }
+    }
+    if (gateId && !result.some((o) => o.id === gateId)) {
+      const gate = opts.find((o) => o.id === gateId && o.kind === 'passive');
+      if (gate) {
+        for (let i = result.length - 1; i >= 0; i--) {
+          if (!ownedUp.includes(result[i])) { result[i] = gate; break; }
+        }
+      }
+    }
+  }
+  // VS-true common drop (M10): while the ring is UNOWNED, one fresh slot is
+  // always the ring. The M10c probe (test/probe-balance.mjs) measured that
+  // even a ×4-weighted ring left 7/10 seeds ring-less — they die before the
+  // 4th level-up where the lottery would eventually deliver it, and the
+  // 60–130s window (60s wave + bubble swarms) is lethal for a whip-only
+  // build (directional beam, no orbiting AoE). A forced common slot makes
+  // ring acquisition deterministic; once owned it's a normal upgrade item.
+  if (!G.weapons['crackerring']) {
+    if (!result.some((o) => o.id === 'crackerring')) {
+      const ringOpt = opts.find((o) => o.id === 'crackerring');
+      if (ringOpt) {
+        for (let i = result.length - 1; i >= 0; i--) {
+          if (!ownedUp.includes(result[i])) { result[i] = ringOpt; break; }
+        }
+      }
+    }
+  }
   return result.length ? result : shuf(opts).slice(0, 3);
 }
 function pickOption(i: number): void {
