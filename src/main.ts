@@ -261,37 +261,75 @@ function keyIndex(...ks: string[]): number {
   for (let i = 0; i < ks.length; i++) if (justPressed(ks[i])) return i;
   return -1;
 }
-// ---------- mouse/touch move (click-and-hold steers the player) ----------
-// While a pointer (mouse LMB or touch) is held, the player walks toward the
-// cursor's world position. Touch also taps the level-up options.
+// ---------- mouse/touch input ----------
+// mouse LMB / touch hold (upper half) = walk toward the pointer.
+// M6 touch (lower half of the view) = FLOATING THUMBSTICK: the base spawns
+// where the finger lands, drag = analog move vector (prisma-panic M12 pattern).
+// Touch also TAPS: level-up options, and title/dead/win screens start a run.
+const COARSE = matchMedia('(pointer: coarse)').matches || 'ontouchstart' in window; // phone/tablet
 let pointerHeld = false;
 let pointerWorld: { x: number; z: number } | null = null;
-function screenToWorld(sx: number, sy: number): { x: number; z: number } {
-  const scale = Math.max(1, Math.floor(Math.min(window.innerWidth / VIEW_W, window.innerHeight / VIEW_H)));
-  const offX = (window.innerWidth - VIEW_W * scale) / 2;
-  const offY = (window.innerHeight - VIEW_H * scale) / 2;
-  return { x: (sx - offX) / scale, z: (sy - offY) / scale };
-}
+let stick = { active: false, id: -1, bx: 0, bz: 0, x: 0, z: 0 };
+const STICK_R = 40; // view units — full-stick throw
 const canvasEl = (document.getElementById('c') as HTMLCanvasElement);
+function clientToView(cx: number, cy: number): { x: number; z: number } {
+  const r = canvasEl.getBoundingClientRect();
+  return { x: (cx - r.left) / CANVAS_SCALE, z: (cy - r.top) / CANVAS_SCALE };
+}
+// M6 fix: cursor view pos → WORLD pos via the camera. The pre-M6 code compared
+// the cursor's VIEW coords (0..320) against the player's WORLD coords
+// (0..1280), so walk-toward-cursor skewed up-left, worse the farther the
+// player was from the world's top-left corner.
+function clientToWorld(cx: number, cy: number): { x: number; z: number } {
+  const v = clientToView(cx, cy);
+  return { x: camX() + v.x, z: camY() + v.z };
+}
+function stickMove(e: PointerEvent): void {
+  const v = clientToView(e.clientX, e.clientY);
+  let dx = v.x - stick.bx, dz = v.z - stick.bz;
+  const len = Math.hypot(dx, dz);
+  if (len > STICK_R) { dx = dx * STICK_R / len; dz = dz * STICK_R / len; }
+  stick.x = dx / STICK_R; stick.z = dz / STICK_R;
+}
 canvasEl.addEventListener('pointerdown', (e: PointerEvent) => {
+  const v = clientToView(e.clientX, e.clientY);
+  if (COARSE && G.mode === 'play' && v.z > VIEW_H / 2 && !stick.active) {
+    // M6 thumbstick: lower half of the view, touch only
+    stick.active = true; stick.id = e.pointerId;
+    stick.bx = v.x; stick.bz = v.z; stick.x = 0; stick.z = 0;
+    try { canvasEl.setPointerCapture(e.pointerId); } catch { /* headless CDP pointers may reject capture — movement still routes while the finger stays inside */ }
+    stickMove(e);
+    e.preventDefault();
+    return;
+  }
   pointerHeld = true;
-  const w = screenToWorld(e.clientX, e.clientY);
-  pointerWorld = w;
+  pointerWorld = clientToWorld(e.clientX, e.clientY); // walk target in WORLD space
   if (G.mode === 'levelup') {
-    // tap the option row (mobile level-up)
+    // tap the option row (mobile level-up) — the row is laid out in VIEW space
     const rowH = 44, top = 36;
-    const idx = Math.floor((w.z - top) / rowH);
+    const idx = Math.floor((v.z - top) / rowH);
     if (idx >= 0 && idx < G.options.length) { pickOption(idx); pointerHeld = false; return; }
+  } else if (COARSE && (G.mode === 'title' || G.mode === 'dead' || G.mode === 'win')) {
+    startRun(G.seed); // M6: tap to (re)start
   }
   e.preventDefault();
 });
 canvasEl.addEventListener('pointermove', (e: PointerEvent) => {
+  if (stick.active && e.pointerId === stick.id) { stickMove(e); e.preventDefault(); return; }
   if (!pointerHeld) return;
-  pointerWorld = screenToWorld(e.clientX, e.clientY);
+  pointerWorld = clientToWorld(e.clientX, e.clientY);
 });
-window.addEventListener('pointerup', () => { pointerHeld = false; pointerWorld = null; });
+function endPointer(e: PointerEvent): void {
+  if (stick.active && e.pointerId === stick.id) {
+    stick.active = false; stick.id = -1; stick.x = 0; stick.z = 0;
+  }
+  pointerHeld = false; pointerWorld = null;
+}
+window.addEventListener('pointerup', endPointer);
+window.addEventListener('pointercancel', endPointer);
 canvasEl.style.touchAction = 'none';
 function currentMove(): [number, number] {
+  if (stick.active && (stick.x !== 0 || stick.z !== 0)) return [stick.x, stick.z];
   if (pointerHeld && pointerWorld) {
     // walk toward the cursor: direction from player to pointer world pos
     const dx = pointerWorld.x - G.player.x, dz = pointerWorld.z - G.player.z;
@@ -1256,11 +1294,21 @@ function startRun(seed: number): void { G = mkGame(seed); G.mode = 'play'; botDi
 const canvas = (document.getElementById('c') as HTMLCanvasElement);
 const ctx = canvas.getContext('2d')!;
 ctx.imageSmoothingEnabled = false;
+let CANVAS_SCALE = 1;
 function fitCanvas(): void {
-  const scale = Math.max(1, Math.floor(Math.min(window.innerWidth / VIEW_W, window.innerHeight / VIEW_H)));
+  let scale: number;
+  if (COARSE) {
+    // M6: phones letterbox FILL — integer scale leaves a 320x240 island on a
+    // 844x390 screen. Non-integer here (pixelated rendering keeps it crisp
+    // enough); aspect-preserved by the min().
+    scale = Math.min(window.innerWidth / VIEW_W, window.innerHeight / VIEW_H);
+  } else {
+    scale = Math.max(1, Math.floor(Math.min(window.innerWidth / VIEW_W, window.innerHeight / VIEW_H)));
+  }
+  CANVAS_SCALE = scale;
   canvas.width = VIEW_W; canvas.height = VIEW_H;
-  canvas.style.width = (VIEW_W * scale) + 'px';
-  canvas.style.height = (VIEW_H * scale) + 'px';
+  canvas.style.width = Math.round(VIEW_W * scale) + 'px';
+  canvas.style.height = Math.round(VIEW_H * scale) + 'px';
 }
 window.addEventListener('resize', fitCanvas);
 fitCanvas();
@@ -1382,6 +1430,14 @@ function render(t: number): void {
     const pair = lastEvoPair();
     center(pair ? (WEAPONS[pair.base].name + '  +  ' + PASSIVES[pair.passive].name) : '???', 116, 0);
     center('= ' + (pair ? WEAPONS[pair.to].name : '?'), 128, 1);
+  }
+  // M6 thumbstick overlay (canvas-space, over everything): base + knob
+  if (COARSE && G.mode === 'play' && stick.active) {
+    ctx.strokeStyle = 'rgba(255,224,130,0.5)';
+    ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.arc(stick.bx, stick.bz, STICK_R, 0, 6.283); ctx.stroke();
+    ctx.fillStyle = 'rgba(255,224,130,0.65)';
+    ctx.beginPath(); ctx.arc(stick.bx + stick.x * STICK_R, stick.bz + stick.z * STICK_R, 12, 0, 6.283); ctx.fill();
   }
 }
 
@@ -1548,7 +1604,8 @@ function drawTitle(t: number): void {
   const tx = Math.round((VIEW_W - tw) / 2);
   drawText(ctx, title, tx + 2, 109 + bounce + 2, 0, 2);
   drawText(ctx, title, tx, 108 + bounce, 1, 2);
-  if (Math.floor(t * 1.6) % 2 === 0) center('press SPACE to drop in', 136, 0);
+  if (COARSE) center('TAP TO DROP IN', 136, 0);
+  else if (Math.floor(t * 1.6) % 2 === 0) center('press SPACE to drop in', 136, 0);
   // character select: 1/2/3
   const chars = Object.keys(CHARACTERS);
   let line = '';
@@ -1590,6 +1647,17 @@ function frame(now: number): void {
   render(now / 1000);
 }
 requestAnimationFrame(frame);
+
+// M6: register the PWA service worker (offline shell + hashed assets).
+// GH Pages serves the repo sub-path, so sw.js must scope to the page's own
+// directory (vite base './' keeps the bundle path-relative too).
+if ('serviceWorker' in navigator && !location.hostname.includes('localhost')) {
+  const swScope = location.href.replace(/[^/]*$/, '');
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register(swScope + 'sw.js', { scope: swScope })
+      .catch(() => { /* dev/hmr or non-https: the game still plays online */ });
+  });
+}
 
 // ---------- __cap probe ----------
 const win = window;
@@ -1719,6 +1787,15 @@ const win = window;
   freeze: () => { frozen = true; },
   unfreeze: () => { frozen = false; },
   step: () => { update(); return (win as any).__cap.state(); },
+  // M6 mobile probes: the touch UI is real DOM/pointer code — these let a soak
+  // drive the ACTUAL widget path (dispatched pointer events) and read back
+  // what currentMove() would consume, instead of injecting botDir directly.
+  isTouch: () => COARSE,
+  stickState: () => ({ a: stick.active, id: stick.id, x: +stick.x.toFixed(3), z: +stick.z.toFixed(3) }),
+  moveVec: () => currentMove(),
+  botDir: () => ({ x: botDir.x, y: botDir.y }),
+  manifest: () => (document.querySelector('link[rel="manifest"]') as HTMLLinkElement | null)?.href || null,
+  sw: () => ('serviceWorker' in navigator) ? !!navigator.serviceWorker.controller : null,
   magnetRadius: () => PLAYER.magnetBase + (G.level - 1) * PLAYER.magnetPerLevel,
   // orbit weapon: expose the live orbit position for the bot (distance to ring)
   orbit: () => orbitPos ? { x: orbitPos.x, z: orbitPos.z } : null,

@@ -1,0 +1,16 @@
+{
+  "name": "Poop Survivors — the kitchen is infested",
+  "short_name": "Poop Survivors",
+  "description": "You are a crouton that dropped into a soup bowl. Move, auto-attack, snowball until the screen is soup. Survive 30 minutes until The Final Flush finds you.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "fullscreen",
+  "orientation": "landscape",
+  "background_color": "#0d0b0f",
+  "theme_color": "#d99a2b",
+  "icons": [
+    { "src": "./icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "./icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "./icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

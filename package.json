@@ -11,7 +11,8 @@
     "test:m1": "node test/m1.mjs",
     "test:m2": "node test/m2.mjs",
     "test:m3": "node test/m3.mjs",
-    "test:m4": "node test/m4.mjs"
+    "test:m4": "node test/m4.mjs",
+    "test:m6": "node test/m6.mjs"
   },
   "devDependencies": {
     "puppeteer-core": "^25.5.0",

@@ -272,9 +272,9 @@ bars) and played by a `Chip` synth that emulates the APU channels.
 | **M3** | director: 6 enemies, full timed script, 5 bosses + The Final Flush, chest/evolution system complete, 30:00 end, stage items | soak: bot completes a 30:00 run at least once across 5 seeds |
 | **M4** | content completion: 8 weapons/8 passives/8 evolutions, 3 characters, meta (gold, unlocks, achievement wall), stage 2 | all evolutions reachable (test per character); unlock math verified |
 | **M5** | juice + audio: hit flash, death pops, screen shake, XP sparkle, level-up animation, all SFX, 2 music loops | human-feel pass (you play 10 min, it feels alive) |
-| **M6** | touch + PWA: thumbstick, layout 390×844 + landscape, manifest/SW, persisted mute | touch bot plays 5:00 on emulated phone (prisma-panic M12 pattern) |
+| **M6** | touch + PWA: thumbstick, layout 390×844 + landscape, manifest/SW, persisted mute | touch bot plays 5:00 on emulated phone (prisma-panic M12 pattern) — **DONE 2026-09-04, 28/0** |
 | **M7** | balance soak + regression: bot soaks over 10 seeds × 30 min, rate reported (not boolean — the M15 lesson), tuning pass, full suite green | soak rate: ≥60% of bot runs reach 20:00, ≥1 full clear; 100% regression |
-| **M8** | launch: GH Pages, hero screenshot, README, final commit log | playable at https://hermespertti.github.io/poop-survivors |
+| **M8** | launch: GH Pages, hero screenshot, README, final commit log | playable at https://hermespertti.github.io/poop-survivors — **assets done 2026-09-04 (og.png, README, og tags); deploy pending** |
 
 ## 15. Decisions (locked 2026-08-31, user)
 
@@ -536,3 +536,42 @@ majority + boss median ≥2 is a pick-strategy / early-pressure tune, not
 another content change — the pool and director are in good shape. Parked
 alongside M6 (mobile) — see the mobile milestone below.
 
+
+## 23. M6 mobile (2026-09-04) — thumbstick + PWA shipped, soak green 28/0
+
+**What landed:**
+- **Floating thumbstick** (lower half of the view, coarse pointers only): the base
+  spawns under the finger, drag = analog move vector, released finger = stop.
+  Upper half stays pointer-walk (mouse-style hold-to-walk). Movement routes
+  through `currentMove()` above `botDir`, so the touch path is provably separate
+  from the bot path (`__cap.botDir()` stays 0 the whole run).
+- **Phone fit**: `fitCanvas()` letterbox-FILLS on coarse pointers (non-integer
+  scale; pixelated CSS keeps it crisp) — a 320×240 island on an 844×390 screen
+  is the pre-M6 look. `clientToView/clientToWorld` use the canvas rect +
+  `CANVAS_SCALE` (and the M6 fix: cursor → WORLD via the camera, not view-coords
+  compared against world coords).
+- **PWA shell** (`public/`): manifest.webmanifest (landscape, maskable icon),
+  sw.js (network-first shell, cache-first hashed assets, versioned cache purge),
+  icons 192/512/maskable/apple-touch. SW registers only off-localhost, scoped to
+  the page's own directory (GH Pages serves a sub-path; vite `base:'./'` keeps
+  the bundle relative).
+- **Tap UX**: title/dead/win screens start a run on tap; level-up options are
+  tappable (row math in VIEW space).
+
+**The soak bug (27/1 → 28/0):** the touch bot did touchStart+touchEnd per
+decision and sat idle for the CDP round-trips in between — no stick → no
+movement — which let the swarm catch it at 277.4s, 23s short of the 5:00 boss.
+Fix is in the harness, not the game: the thumb (finger 1) now HOLDS the whole
+run and every decision is a touchMove; a second finger (finger 2) taps
+level-ups. Real CDP `Input.dispatchTouchEvent` throughout (multi-touch: touchEnd
+lists only the lifted finger). Result: seed 1337 → **lv 12 at 329.2s, 734 kills,
+boss seen, 662 stick drags, 11 taps** — past the 5:00 window the GDD gate asks
+for.
+
+**Gate wiring:** `npm test` now runs m1–m4 in parallel (batched step() — safe,
+byte-identical under contention) then m6 ALONE: its Part C is the only real-time
+rAF soak, and the pre-M7 rule that real-time bots degrade under CPU contention
+still applies to it. `npm run test:m6` runs it standalone.
+
+**Parked alongside (unchanged):** the natural-bot balance tail from §22 (heaven
+majority + boss median ≥2) is a pick-strategy tune, not mobile work.
