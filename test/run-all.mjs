@@ -20,7 +20,7 @@
 import { spawn } from 'node:child_process';
 import { ensureServer, killIfOwned } from './server.mjs';
 
-const SUITES = ['m1', 'm2', 'm3', 'm4'];
+const SUITES = ['m1', 'm2', 'm3', 'm4', 'm11'];
 const REALTIME = ['m6'];
 
 await ensureServer();

@@ -13,9 +13,14 @@ Play: <https://hermespertti.github.io/poop-survivors>
 - **6 scheduled bosses** — The First Wind → Colonel C → The Constipation → The
   Diarrhea Express → Mr. Sphincter → The Lint King, then the Final Flush
 - **4 characters** (Plunger locked behind a boss kill), **2 stages** (Kitchen / Bathroom)
-- **Gold + unlocks persist** between runs (localStorage meta)
-- **Mobile PWA** — installable, offline shell, floating thumbstick (lower half of the
-  screen) + tap for level-ups. Best in landscape.
+- **Gold + unlocks persist** between runs (localStorage meta) — and gold finally
+  **spends**: a title-screen shop of 4 permanent upgrades (max HP, damage, XP,
+  gold; Q/W/E/R or tap a row)
+- **Run-end results**: kills, time, gold banked, NEW BEST TIME, and a fanfare for
+  anything the run unlocked
+- **Mobile PWA** — installable, offline shell, floating thumbstick (lower half of
+  the screen), tap for level-ups, **on-screen pause + mute buttons**, and a big
+  "TAP TO DROP IN" start prompt. Best in landscape.
 
 ## Controls
 
@@ -28,7 +33,9 @@ Play: <https://hermespertti.github.io/poop-survivors>
 | SPACE / tap (title) | start / restart run |
 | P | pause |
 | M | mute (persists) |
-| 1–4 / S (title) | character / stage select |
+| Q·W·E·R (title) | buy a shop upgrade |
+| 1–4 / S (title) | character / stage select (tap to cycle on mobile) |
+| pause / mute buttons (mobile) | top-center, under the timer |
 
 ## Dev
 

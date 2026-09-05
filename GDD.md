@@ -274,7 +274,10 @@ bars) and played by a `Chip` synth that emulates the APU channels.
 | **M5** | juice + audio: hit flash, death pops, screen shake, XP sparkle, level-up animation, all SFX, 2 music loops | human-feel pass (you play 10 min, it feels alive) |
 | **M6** | touch + PWA: thumbstick, layout 390×844 + landscape, manifest/SW, persisted mute | touch bot plays 5:00 on emulated phone (prisma-panic M12 pattern) — **DONE 2026-09-04, 28/0** |
 | **M7** | balance soak + regression: bot soaks over 10 seeds × 30 min, rate reported (not boolean — the M15 lesson), tuning pass, full suite green | soak rate: ≥60% of bot runs reach 20:00, ≥1 full clear; 100% regression |
-| **M8** | launch: GH Pages, hero screenshot, README, final commit log | playable at https://hermespertti.github.io/poop-survivors — **assets done 2026-09-04 (og.png, README, og tags); deploy pending** |
+| **M8** | launch: GH Pages, hero screenshot, README, final commit log | playable at https://hermespertti.github.io/poop-survivors — **DONE 2026-09-04, commit 697e160, site live** |
+| **M9** | balance pass: spitter-gunk dodge (m3 endgame), ring common item | gate green, m3 2/5 — **DONE 2026-09-03, commit 2fde66e** |
+| **M10** | balance tail: evo-weapon pool bug fix + evo-gate guarantee + bot ladder | heaven 10/10, boss median 5+, deaths at the endgame wall — **DONE 2026-09-04, commit 1de88b2 (§22)** |
+| **M11** | human playability: text contrast, gold shop (meta sink), rich end screens, mobile start cue + pause/mute buttons + tap char/stage/shop | m11 feature suite 15/0; full gate 183/0 across 6 suites — **DONE 2026-09-04 (§24)** |
 
 ## 15. Decisions (locked 2026-08-31, user)
 
@@ -487,7 +490,7 @@ strategy fight each other. Reverted; ship them together in M9.
 - Every harness now calls `test/server.mjs` `ensureServer()` first — a dead
   dev server no longer costs a suite its first lines.
 
-## 22. M9 balance pass (in progress, 2026-09-03) — the endgame wall was ranged chip
+## 22. Balance passes (M9 2026-09-03 → M10 2026-09-04) — the endgame wall, then the evo-pool bug
 
 Two measured, non-obvious fixes landed this session. Gate is 140/0 GREEN with
 m3 back to **2/5 completions** (was 1/5 pre-M8, 0/5 mid-M9).
@@ -536,6 +539,32 @@ majority + boss median ≥2 is a pick-strategy / early-pressure tune, not
 another content change — the pool and director are in good shape. Parked
 alongside M6 (mobile) — see the mobile milestone below.
 
+**M10 resolution (2026-09-04, commit 1de88b2):** the tune was bigger than a
+pick-strategy tweak. A one-shot probe (`test/probe-balance.mjs`, 10 seeds,
+per-seed build timelines) found the smoking gun: **`P:{}` on every run** — no
+natural seed ever owned a passive. Root cause was a real bug, not the lottery:
+`buildOptions()` had `if (WEAPONS[id].evolved) continue;`, which **dropped the
+evolved weapon from the option pool entirely** — superfart was permanently
+stuck at lvl 1 in every natural run (m3/m4 hid it by head-starting superfart
+8 via `giveWeaponNow`). Natural builds maxed a SECONDARY line and carried
+`superfart:1` into the boss wall. The fix set (all measured, all in
+`buildOptions` + the balance bot): evolved weapon is a proper levelable
+upgrade (pinned into the owned-upgrade draw post-evo), evo-gate guarantee
+(a committed base line forces its evo passive into a fresh slot — the evo is
+the game's core loop and can't ride the lottery), ring ×4 + passives ×2
+common-tier weights, evo-line-first bot ladder + breakfast sustain. Result,
+official `test/balance.mjs` gate: **heaven 10/10 (target ≥5), median 7.9 min
+(target 8–10), boss median 5–6 (target ≥2), console clean, deaths now
+1646–1749s** (the final boss gauntlet, HP 100% through 25 min) vs M9's
+"7/10 dead before 5:00." Death rate 8–9/10 vs the soft 1–5 band is the only
+remaining gap, and the deaths are the *right shape* — a strong player
+reaching the LINT KING / FINAL FLUSH wall. Full regression gate 168/0.
+
+**M11 side fix (same session):** all heal sites clamped to `PLAYER.maxHp`
+(100) instead of the *expanded* `G.stats.maxHp` — breakfast (+25/stack) was
+effectively dead (a 175-max build healed to 100, the +75 only spent as a
+one-time buffer). Now clamps to `G.stats.maxHp` everywhere.
+
 
 ## 23. M6 mobile (2026-09-04) — thumbstick + PWA shipped, soak green 28/0
 
@@ -575,3 +604,54 @@ still applies to it. `npm run test:m6` runs it standalone.
 
 **Parked alongside (unchanged):** the natural-bot balance tail from §22 (heaven
 majority + boss median ≥2) is a pick-strategy tune, not mobile work.
+
+## 24. M11 human playability (2026-09-04) — the game for the player, not the bot
+
+The M6–M10 work proved the game survives; M11 makes it *playable and
+replayable by a human*. Five measured gaps, all fixed and all covered by a
+new `test/m11.mjs` feature suite (15 assertions, phone + desktop).
+
+**1. Text was dark-on-dark.** `drawText` gave every style the same near-black
+halo, so dark-brown ink (style 0) vanished on the dark overlays — the death
+screen sub-lines ("lv… kills… time", "press SPACE to retry") were
+brown-on-brown (verified: before-screenshot, vision-confirmed). Fix: per-style
+halos — white ink keeps the dark outline (pops on bright floors), dark/medium
+ink gets a light parchment outline (reads on dark overlays, bars, letterbox).
+Light halo on a bright floor is invisible, so nothing regresses where text
+already read.
+
+**2. Gold had no sink.** Gold was earned, banked to META, shown on the title —
+and never spent. The meta loop was "die → bank gold → watch the number go
+up." Fix: a persistent gold shop on the title — 4 upgrades (IRON STOMACH +15
+max HP, MEAT LOADER +10% dmg, FAST DIGEST +10% XP, GOLD RUSH +10% gold, each
+×5, cost base×(lvl+1)). Keyboard Q/W/E/R, tap-a-row on phone, applied at run
+start (`applyUpgrades()` multiplies onto the mkGame-baked stats — deliberately
+NOT `recomputeStats()`, which would drop the baked character bonus that m2's
+fresh-baseline assertion pins; mid-run passive picks re-apply the same shop
+factors so the buffs persist). `metaReset`/`metaUpgrade`/__cap.state().meta
+expose it to harnesses.
+
+**3. Thin end screens.** "SOUPED — press SPACE" with no context; unlocks fired
+silently. Fix: `drawEndScreen` now shows stats (lv/kills/time), gold earned
++ bank, NEW BEST TIME, best time, and a "NEW: HOT DOG / PLUNGER / …" fanfare
+for anything the run unlocked (endRun now records `lastUnlocks` +
+`newBestTime`). Prompt is tap-wording on phones.
+
+**4. Mobile start.** The desktop title said "press SPACE" (blinking); the
+COARSE branch existed but the cue was weak. Fix: an always-on, 2×-scale
+"TAP TO DROP IN" (or PRESS SPACE) line — the tap-to-start path itself was
+verified working (m11 asserts it with a real CDP touch). Title char/stage
+lines are now tap-cyclable (a phone had no way to pick a character).
+
+**5. No mobile pause/mute.** P and M were keyboard-only. Fix: two buttons top-
+center under the timer (COARSE only) — pause (||) and mute (M, struck through
+when muted) — drawn in the HUD, hit-tested in pointerdown before the stick
+logic. `muted()` exported from sfx; `paused` now in `__cap.state()`.
+
+**Verification:** tsc clean; m11 feature suite 15/0 (phone: tap-start, tap-
+buy, gold deduction, +maxHp applied, pause/mute buttons, level-up tap
+regression, zero page errors; desktop: Q/E buys, SPACE start, P pause, zero
+errors); full gate m1–m4 + m11 + m6 green (m2's fresh-baseline assertion was
+the one regression, fixed by `applyUpgrades`); before/after screenshots
+vision-checked (end screen fully readable; title shop rows legible; boss bar
+intact; phone title clean).

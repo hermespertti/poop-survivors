@@ -1414,12 +1414,15 @@ export function drawText(
   // 0 = dark outline (default), 1 = white, 2 = medium brown (secondary text)
   // scale=2 for big screens (title, LEVEL UP, overlays) — doubles each font
   // pixel for readability while keeping the bitmap look.
-  // style 0 gets a 1px near-black halo (drawn in a first pass so ink on top
-  // never smears it) — small brown-on-brown 1px text was unreadable in play.
+  // M11 per-style halos: white ink keeps the near-black outline (pops on
+  // bright floors), dark/medium ink gets a LIGHT parchment outline so it
+  // reads on dark overlays, bars and the letterbox — the pre-M11 single
+  // near-black halo washed dark-brown text out on the death/win screens and
+  // the letterbox border (measured: m11-before-dead.png, the sub-lines were
+  // brown-on-brown). Light halo on a bright floor is invisible — no change
+  // where the text already read.
   const ink = style === 1 ? PALETTE[5] : style === 2 ? '#a5651d' : PALETTE[4];
-  // every style gets a 1px near-black halo (drawn first, ink on top) — crisp
-  // dark outline + fill reads clearly on bright floors and dark overlays alike.
-  const halo = PALETTE[15];
+  const halo = style === 1 ? PALETTE[15] : PALETTE[0];
   const px = (i: number, c: number) => x + i * 7 * scale + c * scale;
   const py = (r: number) => y + r * scale;
   ctx.fillStyle = halo;

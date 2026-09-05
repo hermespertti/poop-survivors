@@ -6,7 +6,7 @@
 // Art: hand-authored pixel arrays over one 16-color palette, 8x8 bitmap font.
 
 import { PALETTE, SPRITES, drawSprite, drawScaled, drawText } from './art';
-import { sfx, toggleMute, musicIntensity } from './sfx';
+import { sfx, toggleMute, muted, musicIntensity } from './sfx';
 
 // ---------- deterministic RNG (mulberry32) ----------
 function mulberry32(seed: number) {
@@ -188,13 +188,15 @@ type Game = {
 
 // ---------- meta (M4): gold + unlocks persist across runs (localStorage) ----------
 const META_KEY = 'poop-survivors-meta';
-type Meta = { gold: number; unlocked: string[]; achievements: string[]; bestTime: number; bestKills: number };
+// M11: upgrades = persistent gold-shop levels (the pre-M11 loop banked gold
+// and never spent it — the meta wallet was a counter, not a progression).
+type Meta = { gold: number; unlocked: string[]; achievements: string[]; bestTime: number; bestKills: number; upgrades: Record<string, number> };
 function loadMeta(): Meta {
   try {
     const raw = localStorage.getItem(META_KEY);
-    if (raw) { const m = JSON.parse(raw); if (m && Array.isArray(m.unlocked)) return m as Meta; }
+    if (raw) { const m = JSON.parse(raw); if (m && Array.isArray(m.unlocked)) { if (!m.upgrades || typeof m.upgrades !== 'object') m.upgrades = {}; return m as Meta; } }
   } catch {}
-  return { gold: 0, unlocked: ['crouton'], achievements: [], bestTime: 0, bestKills: 0 };
+  return { gold: 0, unlocked: ['crouton'], achievements: [], bestTime: 0, bestKills: 0, upgrades: {} };
 }
 function saveMeta(m: Meta): void {
   try { localStorage.setItem(META_KEY, JSON.stringify(m)); } catch {}
@@ -207,6 +209,38 @@ const STAGES: Record<string, { name: string; unlock: string; tileA: string; tile
 };
 let selectedChar = 'crouton';
 let selectedStage = 'kitchen';
+// M11: run-end display state (set in endRun, cleared in startRun) — the
+// pre-M11 death/win screen was 3 lines of brown text; now it's stats, gold
+// banked, best-time records, and a fanfare for anything THIS run unlocked.
+let lastUnlocks: string[] = [];
+let newBestTime = false;
+// M11: the gold shop — banked gold finally spends. VS-style meta progression:
+// each buy is a small permanent buff, applied at the START of the next run
+// (via recomputeStats, so in-run passives can't wipe it). Costs stack
+// base*(lvl+1) so the late game slows. A decent run banks ~300-800, so the
+// first level is 1-2 runs of play.
+const UPGRADES: { id: string; name: string; desc: string; price: number; max: number }[] = [
+  { id: 'hp',   name: 'IRON STOMACH', desc: '+15 max HP each',   price: 250, max: 5 },
+  { id: 'dmg',  name: 'MEAT LOADER',  desc: '+10% damage each',  price: 300, max: 5 },
+  { id: 'xp',   name: 'FAST DIGEST',  desc: '+10% XP each',      price: 200, max: 5 },
+  { id: 'gold', name: 'GOLD RUSH',    desc: '+10% gold each',    price: 200, max: 5 },
+];
+let shopOpen = false;
+let shopSel = 0;
+function upLvl(id: string): number { return META.upgrades[id] || 0; }
+function upCost(id: string): number { const u = UPGRADES.find((x) => x.id === id)!; return u.price * (upLvl(id) + 1); }
+function buyUpgrade(id: string): boolean {
+  const u = UPGRADES.find((x) => x.id === id)!;
+  const lvl = upLvl(id);
+  if (lvl >= u.max) { sfx('hurt'); return false; }
+  const cost = upCost(id);
+  if (META.gold < cost) { sfx('hurt'); return false; }
+  META.gold -= cost;
+  META.upgrades[id] = lvl + 1;
+  saveMeta(META);
+  sfx('levelup');
+  return true;
+}
 
 let G: Game = mkGame(1);
 function mkGame(seed: number): Game {
@@ -232,15 +266,21 @@ function mkGame(seed: number): Game {
 
 function recomputeStats(): void {
   const p = (id: string) => G.passives[id] || 0;
-  G.stats.dmgMult = 1 + 0.10 * p('meats');
+  const u = (id: string) => META.upgrades[id] || 0; // M11: gold-shop levels (persist across runs)
+  // M11: shop upgrades multiply into each stat (VS-style meta progression).
+  // The passive terms stay EXACTLY as the m2 assertion suite pins them — with
+  // 0 shop levels every value is byte-identical to the pre-M10 formula. (The
+  // character bonus stays baked in mkGame, as before: crouton's +10% damage is
+  // the pre-pick baseline, recompute owns the in-run terms.)
+  G.stats.dmgMult = (1 + 0.10 * u('dmg')) * (1 + 0.10 * p('meats'));
   G.stats.cdMult = Math.max(0.3, 1 - 0.08 * p('quick'));
   G.stats.speedMult = 1 + 0.10 * p('slippers');
-  G.stats.xpMult = 1 + 0.08 * p('tp');
+  G.stats.xpMult = (1 + 0.10 * u('xp')) * (1 + 0.08 * p('tp'));
   G.stats.projSpeedMult = 1 + 0.10 * p('gloves');
   G.stats.areaMult = 1 + 0.10 * p('widestink');
   G.stats.durationMult = 1 + 0.10 * p('sticky');
-  G.stats.goldMult = 1 + 0.15 * p('goldrush'); // M7: +15% gold / lv
-  G.stats.maxHp = PLAYER.maxHp + 25 * p('breakfast');
+  G.stats.goldMult = (1 + 0.10 * u('gold')) * (1 + 0.15 * p('goldrush'));
+  G.stats.maxHp = PLAYER.maxHp + 25 * p('breakfast') + 15 * u('hp');
   if (G.player.hp > G.stats.maxHp) G.player.hp = G.stats.maxHp;
 }
 
@@ -293,6 +333,40 @@ function stickMove(e: PointerEvent): void {
 }
 canvasEl.addEventListener('pointerdown', (e: PointerEvent) => {
   const v = clientToView(e.clientX, e.clientY);
+  // M11 mobile: pause / mute buttons, top-center under the timer (the only
+  // free strip in play mode — the corners hold LV/XP and HP/gold). Checked
+  // before the stick logic so a tap on one doesn't spawn the stick or walk.
+  if (COARSE && G.mode === 'play' && v.z >= 12 && v.z < 28) {
+    if (v.x >= 136 && v.x < 156) { paused = !paused; sfx('pop'); e.preventDefault(); return; }
+    if (v.x >= 160 && v.x < 180) { const on = toggleMute(); G.flashT = 0.2; muteMsgT = on ? 0 : 1.4; e.preventDefault(); return; }
+  }
+  // M11 mobile: the title-screen shop rows are tap targets — a tap on a row
+  // buys that upgrade, anywhere else on the title starts the run. The CH /
+  // STAGE lines also tap-cycle (a phone had no way to pick before). Zones are
+  // tuned to the drawTitle row baselines (152 CH, 164 STAGE, 174 header,
+  // 188+i*10 shop) so a tap on a row never leaks into the one above.
+  if (COARSE && G.mode === 'title') {
+    for (let i = 0; i < UPGRADES.length; i++) {
+      if (v.z >= shopRowY(i) - 4 && v.z < shopRowY(i) + 7) { buyUpgrade(UPGRADES[i].id); e.preventDefault(); return; }
+    }
+    const chars = Object.keys(CHARACTERS);
+    if (v.z >= 150 && v.z < 161) {
+      for (let i = 0; i < chars.length; i++) {
+        const id = chars[i];
+        if (id === selectedChar) {
+          const nid = chars[(i + 1) % chars.length];
+          if (CHARACTERS[nid].unlock === 'default' || META.unlocked.includes(CHARACTERS[nid].unlock)) selectedChar = nid;
+          break;
+        }
+      }
+      sfx('pop'); e.preventDefault(); return;
+    }
+    if (v.z >= 162 && v.z < 173 && v.x > 112) {
+      const next = selectedStage === 'kitchen' ? 'bathroom' : 'kitchen';
+      if (STAGES[next].unlock === 'default' || META.unlocked.includes(STAGES[next].unlock)) { selectedStage = next; sfx('pop'); }
+      e.preventDefault(); return;
+    }
+  }
   if (COARSE && G.mode === 'play' && v.z > VIEW_H / 2 && !stick.active) {
     // M6 thumbstick: lower half of the view, touch only
     stick.active = true; stick.id = e.pointerId;
@@ -506,12 +580,12 @@ function pickOption(i: number): void {
     G.passives[o.id] = (G.passives[o.id] || 0) + 1;
     recomputeStats();
   } else if (o.kind === 'hp') {
-    G.player.hp = Math.min(PLAYER.maxHp, G.player.hp + 25);
+    G.player.hp = Math.min(G.stats.maxHp, G.player.hp + 25); // M10k: clamp to EXPANDED maxHp so breakfast (+25/stack) can be held, not just buffered
   } else if (o.kind === 'gold') {
     G.gold += Math.round(50 * G.stats.goldMult); // M7 gold rush scaling
   }
   G.mode = 'play';
-  G.player.hp = PLAYER.maxHp; // VS rule: leveling up restores health
+  G.player.hp = G.stats.maxHp; // VS rule: leveling up restores health — to the EXPANDED max (M10k) so breakfast builds keep their buffer
   G.player.invuln = Math.max(G.player.invuln, PLAYER.invulnOnLevel);
   G.flashT = 0.25;
 }
@@ -879,7 +953,7 @@ function resolveChest(): void {
     lastEvo = { base: rdy.baseId, passive: req, to: rdy.toId };
   } else {
     G.gold += Math.round(50 * G.stats.goldMult);
-    G.player.hp = Math.min(PLAYER.maxHp, G.player.hp + 25);
+    G.player.hp = Math.min(G.stats.maxHp, G.player.hp + 25); // M10k: clamp to EXPANDED maxHp so breakfast (+25/stack) can be held, not just buffered
     sfx('chest');
   }
   G.chest = null;
@@ -1021,6 +1095,9 @@ function update(): void {
       const next = selectedStage === 'kitchen' ? 'bathroom' : 'kitchen';
       if (STAGES[next].unlock === 'default' || META.unlocked.includes(STAGES[next].unlock)) selectedStage = next;
     }
+    // M11: shop buys on the keyboard (QWER mirror the title rows)
+    const upIdx = keyIndex('q', 'w', 'e', 'r');
+    if (upIdx >= 0) buyUpgrade(UPGRADES[upIdx].id);
     if (justPressed(' ') || justPressed('enter')) startRun(G.seed);
   } else if (G.mode === 'dead' || G.mode === 'win') {
     if (justPressed(' ') || justPressed('enter')) startRun(G.seed);
@@ -1312,7 +1389,7 @@ function update(): void {
     const it = G.items[i];
     if (Math.hypot(it.x - p.x, it.z - p.z) < PLAYER.radius + 8) {
       if (it.kind === 'gold') { G.gold += Math.round(30 * G.stats.goldMult); }
-      else { G.player.hp = Math.min(PLAYER.maxHp, G.player.hp + 30); }
+      else { G.player.hp = Math.min(G.stats.maxHp, G.player.hp + 30); }
       G.items.splice(i, 1);
       G.stats.itemTaken++;
       G.flashT = Math.max(G.flashT, 0.15);
@@ -1326,9 +1403,15 @@ function update(): void {
   if (G.spawnCd <= 0) { spawnEnemy(pickKind()); G.spawnCd = G.spawnInterval; }
   // music intensity follows the pressure curve (density → louder/heavier)
   musicIntensity(Math.min(1.6, 0.4 + G.enemies.length / 120 + (G.boss ? 0.4 : 0)));
-  // wave bursts: absolute schedule — 1:00, then every 2 min, size grows
+  // wave bursts: absolute schedule — 1:00, then every 2 min, size grows.
+  // M10k: no fresh wave into the LINT KING gauntlet (27:00+) — the M10k4 gate
+  // (test/balance.mjs) measured all 8 deaths at 1646–1749s (the LINT KING
+  // window), and the 1620s + 1740s waves (30 enemies each) burst *into* that
+  // boss fight on top of max-rate ambient + spikes + the rage. A human boss
+  // fight doesn't add a 30-enemy wave; the rest of the director (waves
+  // < 27:00, spikes, ambient) is untouched.
   const waveNext = Math.floor((G.time - 60) / 120) + 1;
-  if (G.time >= 60 && G.waveIdx < waveNext) {
+  if (G.time >= 60 && G.time < 1620 && G.waveIdx < waveNext) {
     G.waveIdx = waveNext;
     const size = 8 + Math.floor(G.time / 60) * 2;
     spawnWave(Math.min(30, size));
@@ -1370,21 +1453,36 @@ function endRun(won: boolean, flushed: boolean): void {
   sfx(won ? 'win' : (flushed ? 'flush' : 'death'));
   // bank the run's gold into the meta wallet
   META.gold += G.gold;
+  const prevBest = META.bestTime;
   META.bestTime = Math.max(META.bestTime, Math.floor(G.time));
+  newBestTime = Math.floor(G.time) > prevBest && Math.floor(G.time) > 0;
   META.bestKills = Math.max(META.bestKills, G.kills);
-  // unlock checks (VS: achievements-lite)
+  // unlock checks (VS: achievements-lite) — remember which are NEW this run
   const unlocks: string[] = [];
   if (won && G.time >= RUN_LEN) unlocks.push('survive5'); // bathroom stage
   if (G.time >= 600) unlocks.push('survive10'); // Hot Dog
   if (G.kills >= 500) unlocks.push('kills500'); // Avocado
   if (G.bossKilled >= 3) unlocks.push('boss3'); // M7: Plunger
-  let any = false;
-  for (const u of unlocks) if (!META.unlocked.includes(u)) { META.unlocked.push(u); any = true; }
-  if (any || G.gold > 0) saveMeta(META);
+  lastUnlocks = [];
+  for (const u of unlocks) if (!META.unlocked.includes(u)) { META.unlocked.push(u); lastUnlocks.push(u); }
+  if (lastUnlocks.length > 0 || G.gold > 0) saveMeta(META);
 }
 
 function clampNum(v: number): number { if (Number.isNaN(v)) { G.stats.nan++; return 0; } return v; }
-function startRun(seed: number): void { G = mkGame(seed); G.mode = 'play'; botDir = { x: 0, y: 0 }; orbitPos = null; orbit2Pos = null; gnatPos = null; lastEvo = null; paused = false; }
+function startRun(seed: number): void { G = mkGame(seed); G.mode = 'play'; botDir = { x: 0, y: 0 }; orbitPos = null; orbit2Pos = null; gnatPos = null; lastEvo = null; paused = false; lastUnlocks = []; newBestTime = false; applyUpgrades(); }
+// M11: shop upgrades multiply onto the mkGame-baked stats (which carry the
+// character bonus). Deliberately NOT recomputeStats() — that recomputes from
+// passives only and would drop the baked char bonus on a fresh run (the m2
+// "fresh baseline dmg 1.1" assertion pins the convention). Mid-run passive
+// picks call recomputeStats(), which re-applies the same shop factors, so the
+// buffs persist through the run either way.
+function applyUpgrades(): void {
+  const u = (id: string) => META.upgrades[id] || 0;
+  G.stats.dmgMult *= 1 + 0.10 * u('dmg');
+  G.stats.xpMult *= 1 + 0.10 * u('xp');
+  G.stats.goldMult *= 1 + 0.10 * u('gold');
+  G.stats.maxHp += 15 * u('hp');
+}
 // ---------- rendering ----------
 const canvas = (document.getElementById('c') as HTMLCanvasElement);
 const ctx = canvas.getContext('2d')!;
@@ -1606,6 +1704,20 @@ function drawHud(t: number): void {
   if (rdy) center('EVO READY: ' + WEAPONS[rdy.toId].name, 56, 1);
   // gold
   drawText(ctx, 'G' + G.gold, VIEW_W - 40, 16, 0);
+  // M11 mobile pause/mute buttons (top-center under the timer — the only free
+  // strip in play mode). COARSE-only: desktop has P/M keys, listed on the
+  // title. Hit-rects are the same coords the pointerdown handler checks.
+  if (COARSE && G.mode === 'play') {
+    // pause: two bars
+    ctx.fillStyle = '#3a2b1a'; ctx.fillRect(135, 11, 20, 16);
+    ctx.fillStyle = '#f3e2b8'; ctx.fillRect(136, 12, 18, 14);
+    ctx.fillStyle = '#4a3220'; ctx.fillRect(141, 14, 3, 9); ctx.fillRect(147, 14, 3, 9);
+    // mute: M (struck through when muted)
+    ctx.fillStyle = '#3a2b1a'; ctx.fillRect(159, 11, 20, 16);
+    ctx.fillStyle = '#f3e2b8'; ctx.fillRect(160, 12, 18, 14);
+    drawText(ctx, 'M', 163, 14, 0);
+    if (muted()) { ctx.fillStyle = '#4a3220'; ctx.fillRect(160, 18, 18, 2); }
+  }
   // boss bar (per-boss name)
   if (G.boss) {
     const bbw = VIEW_W - 60, bbx = 30, bby = 64;
@@ -1632,8 +1744,8 @@ function drawHud(t: number): void {
     if (Math.floor(t * 3) % 2 === 0) center('PAUSED [P]', 66, 1);
   }
 
-  if (G.mode === 'dead') overlay(G.flushed ? 'FLUSHED' : 'SOUPED', `lv${G.level}  kills ${G.kills}  ${fmt(G.time)}`, 'press SPACE to retry', t, true);
-  else if (G.mode === 'win') overlay((STAGES[G.stage]?.name || 'KITCHEN').toUpperCase() + ' CLEARED', `lv${G.level}  kills ${G.kills}  gold ${G.gold}`, 'press SPACE to go again', t, false);
+  if (G.mode === 'dead') drawEndScreen(t, false, G.flushed);
+  else if (G.mode === 'win') drawEndScreen(t, true, G.flushed);
   else if (G.mode === 'levelup') drawLevelUp();
 }
 function overlay(title: string, sub1: string, sub2: string, t: number, dark: boolean): void {
@@ -1644,6 +1756,31 @@ function overlay(title: string, sub1: string, sub2: string, t: number, dark: boo
   center(sub1, 116, 0);
   center(sub2, 128, 0);
 }
+// M11 unlock id → what it unlocked (the reward the run earned). Shown on the
+// end screen so a player who dies at 10:30 sees "NEW: Hot Dog" instead of a
+// silent unlock in the localStorage.
+const UNLOCK_LABEL: Record<string, string> = {
+  survive5: 'THE BATHROOM', survive10: 'HOT DOG', kills500: 'AVOCADO', boss3: 'PLUNGER',
+};
+function drawEndScreen(t: number, won: boolean, flushed: boolean): void {
+  ctx.fillStyle = won ? 'rgba(30,22,10,0.72)' : 'rgba(20,10,6,0.84)';
+  ctx.fillRect(0, 0, VIEW_W, VIEW_H);
+  const bounce = Math.round(Math.sin(t * 2) * 2);
+  const title = won ? (STAGES[G.stage]?.name || 'KITCHEN').toUpperCase() + ' CLEARED!' : (flushed ? 'FLUSHED!' : 'SOUPED!');
+  center(title, 40 + bounce, 1, 2);
+  // stats + gold banked (white primary, parchment secondary)
+  center(`lv ${G.level}   kills ${G.kills}   ${fmt(G.time)}`, 84, 1);
+  center(`gold ${G.gold}  (bank ${META.gold})`, 98, 0);
+  let y = 116;
+  if (newBestTime) { center('* NEW BEST TIME *', y, 1); y += 14; }
+  if (META.bestTime > 0) center(`best ${fmt(META.bestTime)}`, y, 2);
+  // unlock fanfare — anything this run earned glows white, others skip
+  for (const u of lastUnlocks) { center('NEW: ' + (UNLOCK_LABEL[u] || u), y + 14, 1); }
+  // the prompt: tap on a phone, SPACE on a keyboard
+  const prompt = COARSE ? (won ? 'tap to go again' : 'tap to try again') : (won ? 'press SPACE to go again' : 'press SPACE to retry');
+  if (Math.floor(t * 1.6) % 2 === 0) center(prompt, 208, 1);
+}
+
 function drawLevelUp(): void {
   ctx.fillStyle = 'rgba(18,12,6,0.86)'; ctx.fillRect(0, 0, VIEW_W, VIEW_H);
   center('LEVEL UP!', 8, 1, 2);
@@ -1699,9 +1836,11 @@ function drawTitle(t: number): void {
   const tx = Math.round((VIEW_W - tw) / 2);
   drawText(ctx, title, tx + 2, 109 + bounce + 2, 0, 2);
   drawText(ctx, title, tx, 108 + bounce, 1, 2);
-  if (COARSE) center('TAP TO DROP IN', 136, 0);
-  else if (Math.floor(t * 1.6) % 2 === 0) center('press SPACE to drop in', 136, 0);
-  // character select: 1/2/3
+  // M11: the start prompt is ALWAYS ON and big — the pre-M11 version blinked
+  // and said "press SPACE" on a phone, so a first-time mobile player had no
+  // clear way to start (verified: title tap works, the CUE was the gap).
+  center(COARSE ? 'TAP TO DROP IN' : 'PRESS SPACE TO DROP IN', 132, 1, 2);
+  // character select: 1/2/3 (tap the line on a phone)
   const chars = Object.keys(CHARACTERS);
   let line = '';
   chars.forEach((id, i) => {
@@ -1711,20 +1850,30 @@ function drawTitle(t: number): void {
     line += `${sel}${i + 1}${CHARACTERS[id].name[0]}${tag} `;
   });
   center('CH: ' + line.trim(), 152, 0);
-  // stage select: S
+  // stage select: S (tap the right half on a phone)
   const stageLine = STAGES.kitchen.unlock === 'default' || META.unlocked.includes(STAGES.kitchen.unlock) ? 'K' : '?';
   const bathLine = META.unlocked.includes(STAGES.bathroom.unlock) ? 'B' : '?';
   center('STAGE: ' + (selectedStage === 'kitchen' ? 'KITCHEN' : 'BATHROOM') + `  [S] (${stageLine}${bathLine})`, 164, 0);
-  center('move: WASD or arrows', 176, 0);
-  center('P: pause   M: mute', 188, 0);
-  center('survive the 30:00', 200, 0);
-  center('gold bank: ' + META.gold, 212, 0);
+  // M11 gold shop (VS-style meta): banked gold finally spends. Keyboard Q/W/E/R
+  // buys a row; on a phone, TAP the row. Rows match shopRowY() for hit-testing.
+  center(COARSE ? 'UPGRADES: TAP A ROW' : 'UPGRADES QWER  P PAUSE  M MUTE', 176, 2);
+  const SHOPKEYS = ['Q', 'W', 'E', 'R'];
+  const SHOPBRIEF: Record<string, string> = { hp: '+15HP', dmg: '+10%DMG', xp: '+10%XP', gold: '+10%GOLD' };
+  UPGRADES.forEach((up, i) => {
+    const lvl = upLvl(up.id);
+    const right = lvl >= up.max ? 'MAX' : 'G' + upCost(up.id);
+    center(`[${SHOPKEYS[i]}] ${up.name} ${SHOPBRIEF[up.id]} ${lvl}/${up.max} ${right}`, shopRowY(i), 0);
+  });
+  center(`GOLD ${META.gold}  BEST ${fmt(META.bestTime)}`, 230, 1);
   for (let i = 0; i < 3; i++) {
     const bx = (t * 24 + i * 120) % (VIEW_W + 24) - 12;
     const by = 16 + i * 10 + Math.round(Math.sin(t * 3 + i) * 4);
     drawSprite(ctx, SPRITES.bubble, Math.round(bx), by, Math.floor(t * 6 + i) % 2);
   }
 }
+// M11: shop row baselines — drawTitle renders the rows here, pointerdown
+// hit-tests the same rects (one source of truth so tap-targets never drift).
+function shopRowY(i: number): number { return 188 + i * 10; }
 
 // ---------- main loop ----------
 let frozen = false;
@@ -1758,12 +1907,12 @@ if ('serviceWorker' in navigator && !location.hostname.includes('localhost')) {
 const win = window;
 (win as any).__cap = {
   state: () => ({
-    mode: G.mode, time: +G.time.toFixed(3),
+    mode: G.mode, time: +G.time.toFixed(3), paused: paused, // M11: paused readback (mobile button soak)
     x: +G.player.x.toFixed(2), z: +G.player.z.toFixed(2),
     hp: G.player.hp, level: G.level, xp: +G.xp.toFixed(2), xpNeed: G.xpNeed,
     gold: G.gold,
     char: G.char, stage: G.stage, armor: G.armor, maxHp: G.stats.maxHp,
-    meta: { gold: META.gold, unlocked: [...META.unlocked], achievements: [...META.achievements], bestTime: META.bestTime, bestKills: META.bestKills },
+    meta: { gold: META.gold, unlocked: [...META.unlocked], achievements: [...META.achievements], bestTime: META.bestTime, bestKills: META.bestKills, upgrades: { ...META.upgrades } },
     options: G.mode === 'levelup' ? G.options.map((o) => ({ kind: o.kind, id: o.id, name: o.name, lvl: o.lvl })) : [],
     weapons: Object.fromEntries(Object.entries(G.weapons).map(([k, v]) => [k, v.lvl])),
     passives: { ...G.passives },
@@ -1847,9 +1996,10 @@ const win = window;
     selectedStage = id;
     return { ok: true, stage: selectedStage };
   },
-  metaReset: () => { META = { gold: 0, unlocked: ['crouton'], achievements: [], bestTime: 0, bestKills: 0 }; saveMeta(META); return (win as any).__cap.state(); },
+  metaReset: () => { META = { gold: 0, unlocked: ['crouton'], achievements: [], bestTime: 0, bestKills: 0, upgrades: {} }; saveMeta(META); return (win as any).__cap.state(); },
   metaGive: (unlock: string) => { if (!META.unlocked.includes(unlock)) META.unlocked.push(unlock); saveMeta(META); return (win as any).__cap.state(); },
   metaGold: (n: number) => { META.gold = n; saveMeta(META); return (win as any).__cap.state(); },
+  metaUpgrade: (id: string, lvl = 1) => { META.upgrades[id] = lvl; saveMeta(META); return (win as any).__cap.state(); }, // M11: seed shop levels (soak harness)
   chars: () => Object.keys(CHARACTERS).map((id) => ({ id, name: CHARACTERS[id].name, unlock: CHARACTERS[id].unlock, startWeapon: CHARACTERS[id].startWeapon })),
   stages: () => Object.keys(STAGES).map((id) => ({ id, name: STAGES[id].name, unlock: STAGES[id].unlock, scriptShift: STAGES[id].scriptShift })),
   enemiesNear: (r: number) => G.enemies.filter((e) => Math.hypot(e.x - G.player.x, e.z - G.player.z) < r).length,

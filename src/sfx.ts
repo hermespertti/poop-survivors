@@ -13,7 +13,7 @@ let voiceCount = 0; // concurrent one-shots (voice cap)
 setInterval(() => { if (voiceCount > 0) voiceCount = 0; }, 100); // decay window
 
 const MUTE_KEY = 'poop-survivors-mute';
-function muted(): boolean { return localStorage.getItem(MUTE_KEY) === '1'; }
+export function muted(): boolean { return localStorage.getItem(MUTE_KEY) === '1'; } // M11: exported for the mobile mute button label
 export function toggleMute(): boolean {
   const m = muted();
   localStorage.setItem(MUTE_KEY, m ? '0' : '1');
