@@ -278,6 +278,7 @@ bars) and played by a `Chip` synth that emulates the APU channels.
 | **M9** | balance pass: spitter-gunk dodge (m3 endgame), ring common item | gate green, m3 2/5 — **DONE 2026-09-03, commit 2fde66e** |
 | **M10** | balance tail: evo-weapon pool bug fix + evo-gate guarantee + bot ladder | heaven 10/10, boss median 5+, deaths at the endgame wall — **DONE 2026-09-04, commit 1de88b2 (§22)** |
 | **M11** | human playability: text contrast, gold shop (meta sink), rich end screens, mobile start cue + pause/mute buttons + tap char/stage/shop | m11 feature suite 15/0; full gate 183/0 across 6 suites — **DONE 2026-09-04 (§24)** |
+| **M12** | polish + variety + M7 gate close: 4 level-up options, bold bitmap font + title panel, og:url, Lint King tune (HP 2200→1800, ring 12→10, contact 16→13) + bot gap-dodge/heal-seek/AoE-kit | M7 balance gate 5/5 (deaths 2/10, heaven 10/10 @7.9min, boss median 6); full gate 183/0 — **DONE 2026-09-05 (§25)** |
 
 ## 15. Decisions (locked 2026-08-31, user)
 
@@ -655,3 +656,104 @@ errors); full gate m1–m4 + m11 + m6 green (m2's fresh-baseline assertion was
 the one regression, fixed by `applyUpgrades`); before/after screenshots
 vision-checked (end screen fully readable; title shop rows legible; boss bar
 intact; phone title clean).
+
+## 25. M12 polish + variety + the Lint King gate close (2026-09-05)
+
+Human feedback drove this pass: "same item choices every level", "font is
+still hard to read", "no telegram preview" — plus closing the one red M7
+gate assertion (death rate 8/10, target 1–5/10, all deaths at THE LINT
+KING 1655–1719s in the M12 baseline soak).
+
+**1. Level-up: the "same choices" was structural, and it's fixed.**
+Pre-M12 the 3-option draw was 1–2 fresh + 1–2 upgrades, and EARLY upgrades
+are structurally ONLY whip+ring (the only owned items) — so every screen
+was a permutation of {Fart Whip, Cracker Ring, Quick Hands}, and post-evo
+the evolved weapon was PINNED to slot 0 of every draw (the M10k
+superfart:1 fix). Two measured fixes: (a) **4 options** — VS shows 3 + a
+4th luck option (GDD §16 noted it, never built); now 2 fresh + 2 upgrades
+deduped, so two fresh lines are always visible. (b) the evolved line
+stays pinned to the upgrade half (balance-critical, unchanged) but is now
+1 of 4, not 1 of 3. The `shuf()` calls run in the same order, so the
+per-seed rng stream is unchanged. Keyboard 1–4, tap rows, and every bot
+pick by id (findIndex) — all count-agnostic, so no suite touched the row
+count.
+
+**2. Font: the 7×8 master was a 1px-stroke skeleton, not a small-but-okay
+font.** The M1 font is the classic minimal terminal cell (7×8), authored
+for the HUD, and rendered hairline-thin at 1× into the 320×240 view —
+vision-verified pre-M12: "thin strokes, muddy, low contrast on the
+checkerboard" (L15 and the gold counter the worst). Fix is the classic
+bitmap-bolding trick, NOT a re-authored font: every ink pixel renders as
+a 2×2 block ((0,0)+(1,0)+(0,1)), so 1px strokes become chunky 2px at
+every scale, and the halo covers the thickened ink with one 4×4 block per
+pixel. The 7px advance is unchanged, so no caller's width math moves.
+Style 2's ink also darkened (#a5651d → #7d4a12 — the old medium brown sat
+at the tan floor band's value), and a dark panel (rgba(26,15,8,0.88))
+now sits behind the title's CH/STAGE/shop block — the faintest text on
+the screen pre-M12 (vision-verified). After-shots vision-checked: level-up
+rows "bold, high-contrast, legible, nothing clipped" (all 4 rows), title
+block "clearly readable, no collisions".
+
+**3. Telegram preview: the tags were live; the crawler had cached the
+pre-launch page.** og:title/description/image + twitter:card all served
+200 (og.png 1200×600, URL verified char-by-char by vision) — the missing
+piece was `og:url`, now added. The user's link was crawled before M8's
+launch commit, so Telegram shows the stale card until re-crawl: re-share
+with `?v=2` (or wait for the cache to expire).
+
+**4. The M7 death-rate gate: measured, three levers, now 5/5 green.**
+Baseline (M12 pre-pass, 10 seeds, natural build): **8/10 deaths, every
+one at 1655–1719s** — THE LINT KING (spawns 1650s). The other four
+assertions were already green (heaven 10/10 @ 7.9min, boss median 5,
+console clean). The probe tooling (`test/probe-lint.mjs` — extracts the
+balance bot VERBATIM, 5s-resolution samples after 1500s, logs build +
+passives + maxHp + enemy-bullet distances + boss HP) did the work of
+guessing, in this order:
+
+*   **Round 1 — gate-less strafe: 9/10, WORSE.** A Lint King block that
+    strafed the boss for the whole fight pre-empted the one-shot bullet
+    dodge (which had been surviving the rings pre-M12). Death times moved
+    later — the standoff worked — but the bot stopped dodging shots.
+    Lesson: against a radial attacker, the one-shot perpendicular dodge
+    is the correct default; don't override it with generic kiting.
+*   **Round 2 — contact retreat: 8/10, boss median 5→6.** Only retreat
+    radially when the king closes inside 110u (player 140u/s outruns the
+    king's 24/34 raged); at standoff fall through to the shot-dodge.
+    42's probe showed the residual failure: death frame had a bullet 7u
+    from center — a pure retreat runs ALONG the radial bullet line.
+*   **Round 3 — heal seek: 8/10.** The 9001 probe showed HP 36→9 across
+    the Lint King window with donut heal items (30% of the 150s drops)
+    on the floor the whole time — the bot had NEVER grabbed a donut, and
+    after the lv 40 XP wall there are no more level-up full-heals. Added:
+    below 45 HP, run for the nearest heal item within 160u.
+*   **Round 4 — the win/loss probe isolated the real cause.** Winner
+    1337: `ring 8 + superfart 8 + stinkaura 8` (passive AoE aura clears
+    the endgame swarm; survives at 115–132 enemies). Loser 9001: the
+    IDENTICAL build with `plopcannon 8` (aimed single-target) instead of
+    stinkaura — died to the Lint King's 49–55-enemy field at full boss
+    HP. Same passives (quick 5, breakfast 3), same maxHp 175. The kit
+    slot (2nd/3rd DPS line) took whatever the lottery offered first.
+    Fix: the bot's kit slot PREFERs anti-mob AoE (stinkaura > fartbomb >
+    puddle > mine > chainfart), falling through to any fresh weapon — a
+    decent player opening a kit slot against a swarm grabs AoE. 8/10 →
+    **7/10, boss median 6, 3 wins**.
+*   **Round 5 — the Lint King himself, two measured game knobs.** 42's
+    round-4 probe: the bot KILLED the Lint King to 1132/6750 HP, then died
+    to a 4-bullet ring overlap (bullets at 25/72/91/98u) — it wins the
+    DPS race and loses the signature attack. Lint King HP 2200→1800
+    (time-scaled to ~6750 at spawn — the hardest boss window in the game
+    while XP is plateaued at lv 40) and ring bullet 12→10 dmg; contact
+    16→13. (No suite pins these numbers — checked.) 7/10, then **the gap
+    dodge**: the 42b death frame showed 4 surrounding shots — the one-shot
+    perpendicular steps onto a SECOND shot's line. With 2+ shots close,
+    orient the perpendicular AWAY from the shot-cluster centroid (toward
+    the ring's gap); single-shot keeps the old wall-flip logic.
+
+**M12 final (official `test/balance.mjs` gate): 5/5 GREEN** — deaths
+**2/10** (target 1–5; the two: 1618 @1769s post-Lint-King attrition, 272
+@1511s — a 100-maxHP no-breakfast build that rolled a weak lot and died to
+MR. SPHINCTER's 9100 HP, a *build-variance* death, not a wall), heaven
+**10/10 median 7.9min** (target 8–10), boss median **6** (target ≥2),
+console clean. The death shape is now exactly the GDD's: a decent-but-not-
+invincible bot wins most of the time and loses to specific bad rolls, not
+a single wall.

@@ -61,18 +61,73 @@ await page.evaluate(() => {
         const cd = Math.hypot(cdx, cdz) || 1;
         if (cd < 220) { cap.move(cdx / cd, cdz / cd); return; }
       }
+      // M12: THE LINT KING — react to CONTACT, not to the fight. Pre-M12 the
+      // bot had no lint-king logic and survived the rings by the generic
+      // one-shot dodge below; the baseline soak still lost 8/10 to the boss
+      // (1655–1719s) because when the king closed in, the dodge + centroid
+      // churn left it cornered. So: when the king is INSIDE 110u, radial
+      // retreat wins (player 140u/s outruns the king's 24/34 raged) — UNLESS
+      // a ring bullet is inside 60u, in which case the perpendicular dodge
+      // below handles it. The M12c probe (test/probe-lint.mjs, seed 42)
+      // measured the failure this prevents: the death frame had a bullet 7u
+      // from center — a pure retreat runs ALONG the radial bullet line. At
+      // standoff range, fall through to the shot-dodge (measured: a gate-less
+      // strafe block that pre-empted the dodge went 9/10, worse than 8/10).
+      if (s.boss && s.boss.kind === 'lintking') {
+        const bd = Math.hypot(s.boss.x - s.x, s.boss.z - s.z);
+        const nearShot = (cap.enemyBullets(3) || []).some((bb) => bb.d < 60);
+        if (bd < 110 && !nearShot) {
+          const kx = (s.x - s.boss.x) / (bd || 1), kz = (s.z - s.boss.z) / (bd || 1);
+          cap.move(kx, kz); return;
+        }
+      }
       // M9: dodge incoming spitter gunk like a human (perpendicular to the shot
       // line). The pre-M9 natural bot stood still in the endgame gunk field —
       // the m3 trace showed hp bleeding 100→10 at near60=0 before the Lint King
       // even spawned, so the 27-30 min wall was ranged chip, not the boss.
+      // M12g GAP DODGE: with 2+ shots close (a radial ring), the one-shot
+      // perpendicular can step onto a SECOND shot's line — the 42b probe
+      // measured the death frame: bullets at 25/72/91/98u all around, hp
+      // 56→0 in 4s. So when several shots are near, orient the perpendicular
+      // AWAY from the shot cluster (toward the ring's gap) instead of an
+      // arbitrary side.
       const shots = cap.enemyBullets(6).filter((b) => b.d < 110);
       if (shots.length) {
         const b0 = shots[0];
         const sp = Math.hypot(b0.vx, b0.vz) || 1;
         let px = -b0.vz / sp, pz = b0.vx / sp;
-        if ((px > 0.3 && s.x > W - 120) || (px < -0.3 && s.x < 120) ||
-            (pz > 0.3 && s.z > H - 120) || (pz < -0.3 && s.z < 120)) { px = -px; pz = -pz; }
+        if (shots.length >= 2) {
+          // away from the cluster centroid: the gap is on the far side
+          let cxx = 0, czz = 0;
+          for (const bb of shots) { cxx += bb.x; czz += bb.z; }
+          cxx /= shots.length; czz /= shots.length;
+          const ax = s.x - cxx, az = s.z - czz;
+          if (px * ax + pz * az < 0) { px = -px; pz = -pz; }
+        } else {
+          if ((px > 0.3 && s.x > W - 120) || (px < -0.3 && s.x < 120) ||
+              (pz > 0.3 && s.z > H - 120) || (pz < -0.3 && s.z < 120)) { px = -px; pz = -pz; }
+        }
         cap.move(px, pz); return;
+      }
+      // M12d: seek a donut when hurt. The bot caps at lv 40 (~20:00), so
+      // after the XP wall the only heal sources are donut items (30% of the
+      // 150s item drops) — and pre-M12d it never touched them. The 9001
+      // probe measured the cost: HP 36→9 across the Lint King window with
+      // donuts on the floor the whole time. A decent player at <45 HP runs
+      // for food instead of kiting.
+      if (s.hp < 45) {
+        const items = cap.itemList ? cap.itemList() : [];
+        let best = null, bd = 160;
+        for (const it of items) {
+          if (it.kind !== 'heal') continue;
+          const dd = Math.hypot(it.x - s.x, it.z - s.z);
+          if (dd < bd) { bd = dd; best = it; }
+        }
+        if (best) {
+          const dx = best.x - s.x, dz = best.z - s.z;
+          const dd = Math.hypot(dx, dz) || 1;
+          cap.move(dx / dd, dz / dd); return;
+        }
       }
       const near = cap.enemies(16).filter((e) => e.d < 100);
       let wx = 0, wz = 0, wsum = 0;
@@ -159,7 +214,25 @@ await page.evaluate(() => {
       if (pick < 0 && s.evolved && (s.passives.breakfast || 0) < 3) pick = o.findIndex((x) => x.id === 'breakfast'); // breakfast x3 = +75 max HP for the boss gauntlet
       if (pick < 0) pick = o.findIndex((x) => x.kind === 'weapon' && s.weapons[x.id] && x.lvl < 8 && (x.id !== 'fartwhip' || !s.weapons.superfart)); // scale other owned lines (never the re-added base whip)
       const dpsCount = Object.keys(s.weapons).filter((k) => k !== 'crackerring').length;
-      if (pick < 0 && s.evolved && dpsCount < 3) pick = o.findIndex((x) => x.kind === 'weapon' && !s.weapons[x.id]);  // kit: locked until the evo fired, then 2nd/3rd line for clear rate
+      // M12e KIT: when opening the 2nd/3rd DPS line, PREFER anti-mob AoE.
+      // The win/loss probes (test/probe-lint.mjs, M12e) isolated the cause
+      // of the 8/10 death rate: winner 1337 ran ring 8 + superfart 8 +
+      // STINKAURA 8 (passive aura clears the endgame swarm, survives at
+      // 130 enemies) while loser 9001 ran the identical build with PLOP
+      // CANNON 8 (aimed single-target) and died to the Lint King's
+      // 50-130-enemy field at full boss HP — same passives, same maxHp.
+      // A decent player opening a kit slot against a swarm grabs AoE, not
+      // the aimed line the lottery offers first. Preference list = the AoE
+      // archetypes (aura > bomb > zone > mine > chain); falls through to
+      // any fresh weapon if none is on offer (no pick tax).
+      if (pick < 0 && s.evolved && dpsCount < 3) {
+        const AOE_PREF = ['stinkaura', 'fartbomb', 'puddle', 'mine', 'chainfart'];
+        for (const pref of AOE_PREF) {
+          const i = o.findIndex((x) => x.kind === 'weapon' && x.id === pref && !s.weapons[pref]);
+          if (i >= 0) { pick = i; break; }
+        }
+        if (pick < 0) pick = o.findIndex((x) => x.kind === 'weapon' && !s.weapons[x.id]);
+      }
       if (pick < 0) pick = o.findIndex((x) => x.kind === 'passive' && s.passives[x.id]);                 // owned passives (meats etc.)
       if (pick < 0) pick = o.findIndex((x) => x.id === 'crackerring' && x.lvl < 8);
       if (pick < 0) pick = o.findIndex((x) => x.kind === 'weapon' && !s.weapons[x.id]);

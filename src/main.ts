@@ -492,26 +492,26 @@ function buildOptions(): ItemOpt[] {
   const evolvedOpts = ownedUp.filter((o) => WEAPONS[o.id]?.evolved && (G.weapons[o.id]?.lvl || 0) < WEAPONS[o.id].maxLvl);
   const restOpts = ownedUp.filter((o) => !evolvedOpts.includes(o));
   const owned = [...evolvedOpts, ...shuf(restOpts)];
-  const ownedWeaponCount = Object.keys(G.weapons).filter((id) => !WEAPONS[id].evolved && G.weapons[id]).length;
-  // Phase split (M9→M10j): 2 fresh + 1 upgrade while the kit is <2 weapons
-  // (the very first picks: the ring + a stat line); 1 fresh + 2 upgrades from
-  // 2 weapons up. M9's "<3" threshold was measured by the M10i probe
-  // (test/probe-balance.mjs): with start-whip + ring the draw stayed
-  // 2-fresh + 1-upgrade, so the whip's 7 upgrades and the ring's 2 shared ONE
-  // upgrade slot (50/50 per draw) — whip only reached lvl 3-4 by 300s, the
-  // evo (whip 8 + quick) never armed before the first boss chest, and 6/10
-  // seeds died at THE CONSTIPATION with superfart:1 or no evo. From 2 owned
-  // weapons, 2 upgrade slots scale the evo line ~2x faster; the single fresh
-  // slot still delivers the evo gate (quick) and the post-evo kit.
-  const freshSlots = ownedWeaponCount < 2 ? 2 : 1;
-  let result: ItemOpt[];
-  if (fresh.length >= freshSlots) {
-    result = fresh.slice(0, freshSlots).concat(ownedUp.length ? owned : fresh.slice(freshSlots)).slice(0, 3);
-  } else if (fresh.length > 0) {
-    result = [fresh[0], owned[0], owned[1]].filter((o): o is ItemOpt => !!o) as ItemOpt[];
-  } else {
-    result = owned.slice(0, 3);
+  // M12: FOUR options (VS shows 3 + a 4th luck option; GDD §16 noted it, we
+  // never built it). Pre-M12 the 3 slots were 1-2 fresh + 1-2 upgrades — and
+  // early upgrades are structurally ONLY whip+ring (the only owned items), so
+  // every level-up screen was {whip, ring, quick} and it read as the same
+  // choices forever (human feedback). Now: 2 fresh + 2 upgrades. The evolved
+  // line stays pinned to slot 0 of the upgrade half (the M10k superfart:1
+  // fix — it's the build's signature and balance-critical), so it's 1 of 4
+  // instead of 1 of 3. The shuf() calls above keep the same draw order, so
+  // the per-seed rng stream is unchanged from pre-M12.
+  const MAXOPTS = 4;
+  let result: ItemOpt[] = fresh.slice(0, 2);
+  for (const o of owned) {
+    if (result.length >= MAXOPTS) break;
+    if (!result.some((r) => r.id === o.id)) result.push(o);
   }
+  for (const o of fresh.slice(2)) {
+    if (result.length >= MAXOPTS) break;
+    if (!result.some((r) => r.id === o.id)) result.push(o);
+  }
+  if (result.length === 0) result = shuf(opts).slice(0, MAXOPTS);
   // de-dup by id (guard against a single-option pool)
   const seen = new Set<string>();
   result = result.filter((o) => { if (seen.has(o.id)) return false; seen.add(o.id); return o; });
@@ -861,7 +861,7 @@ const BOSS_STATS: Record<string, { hp: number; speed: number; dmg: number; radiu
   constipation: { hp: 2000, speed: 14, dmg: 16, radius: 13 },
   express:      { hp: 1400, speed: 55, dmg: 14, radius: 10 },
   sphincter:    { hp: 2600, speed: 20, dmg: 18, radius: 13 },
-  lintking:     { hp: 2200, speed: 24, dmg: 16, radius: 12 }, // M7
+  lintking:     { hp: 1800, speed: 24, dmg: 13, radius: 12 }, // M7; M12: 2200→1800 HP, 16→13 contact (see GDD §25)
   flush:        { hp: 1200, speed: 30, dmg: 30, radius: 14 },
 };
 function spawnBoss(kind: string, name: string): void {
@@ -1080,7 +1080,7 @@ function update(): void {
   // bypasses this gate, so pause never touches determinism tests)
   if (justPressed('p') && G.mode === 'play') paused = !paused;
   if (G.mode === 'levelup') {
-    const idx = keyIndex('1', '2', '3');
+    const idx = keyIndex('1', '2', '3', '4');
     if (idx >= 0) pickOption(idx);
   } else if (G.mode === 'title') {
     // character select (1/2/3/4) + stage toggle (S) + start (SPACE)
@@ -1321,7 +1321,7 @@ function update(): void {
         b.chargeCd = b.phase2 ? 3.5 : 6;
         for (let k = 0; k < 8; k++) {
           const a = (k / 8) * Math.PI * 2 + b.wob;
-          G.bullets.push({ x: b.x, z: b.z, vx: Math.cos(a) * 100, vz: Math.sin(a) * 100, life: 2.5, dmg: 12, ang: a, hitR: 4, kind: 'gunk', enemy: true });
+          G.bullets.push({ x: b.x, z: b.z, vx: Math.cos(a) * 100, vz: Math.sin(a) * 100, life: 2.5, dmg: 10, ang: a, hitR: 4, kind: 'gunk', enemy: true }); // M12: 12→10 (see GDD §25)
         }
         if (b.phase2 && G.enemies.length < 40) { spawnEnemy('spitter'); spawnEnemy('spitter'); }
       }
@@ -1849,6 +1849,17 @@ function drawTitle(t: number): void {
     const sel = selectedChar === id ? '>' : ' ';
     line += `${sel}${i + 1}${CHARACTERS[id].name[0]}${tag} `;
   });
+  // M12: dark panel behind the select/shop block. Pre-M12 these lines were
+  // style-0 dark ink on the tan checkered floor — the faintest text on the
+  // screen (vision-verified: "crisp but soft, lowest contrast block"). A
+  // dark overlay is exactly where the M11 light-halo style-0 ink reads best,
+  // so one panel fixes the CH/STAGE/header/shop rows at once. The white
+  // GOLD/BEST line (y=230) sits below the panel's bottom edge.
+  ctx.fillStyle = 'rgba(26,15,8,0.88)';
+  ctx.fillRect(10, 148, VIEW_W - 20, 82);
+  ctx.fillStyle = '#4a3220';
+  ctx.fillRect(10, 148, VIEW_W - 20, 1);
+  ctx.fillRect(10, 229, VIEW_W - 20, 1);
   center('CH: ' + line.trim(), 152, 0);
   // stage select: S (tap the right half on a phone)
   const stageLine = STAGES.kitchen.unlock === 'default' || META.unlocked.includes(STAGES.kitchen.unlock) ? 'K' : '?';

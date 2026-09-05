@@ -1421,10 +1421,19 @@ export function drawText(
   // the letterbox border (measured: m11-before-dead.png, the sub-lines were
   // brown-on-brown). Light halo on a bright floor is invisible — no change
   // where the text already read.
-  const ink = style === 1 ? PALETTE[5] : style === 2 ? '#a5651d' : PALETTE[4];
+  const ink = style === 1 ? PALETTE[5] : style === 2 ? '#7d4a12' : PALETTE[4];
   const halo = style === 1 ? PALETTE[15] : PALETTE[0];
   const px = (i: number, c: number) => x + i * 7 * scale + c * scale;
   const py = (r: number) => y + r * scale;
+  // M12 BOLD: every ink pixel is rendered as a 2x2 block ((0,0),(+1,0),(0,+1)
+  // in scale units — the classic bitmap-bolding trick), so the 1px strokes of
+  // the 7x8 master become chunky 2px strokes at every scale. Pre-M12 the
+  // hairline ink washed out on the checkered floor and the small secondary
+  // lines read as mud (human feedback: "too small / hard to read"). The 7px
+  // advance is unchanged, so no caller's width math moves; the halo covers
+  // the thickened ink with one 4x4 block per pixel (±1 around the 2x2).
+  // Style 2's ink also darkened (#a5651d -> #7d4a12): the old medium brown
+  // sat at the same value as the tan floor band.
   ctx.fillStyle = halo;
   for (let i = 0; i < text.length; i++) {
     const glyph = F[text[i].toUpperCase()] ?? F['?'];
@@ -1432,10 +1441,7 @@ export function drawText(
       const row = glyph[r];
       for (let c = 0; c < 7; c++) {
         if (row[c] !== '1') continue;
-        for (let ox = -1; ox <= 1; ox++) for (let oy = -1; oy <= 1; oy++) {
-          if (!ox && !oy) continue;
-          ctx.fillRect(px(i, c) + ox * scale, py(r) + oy * scale, scale, scale);
-        }
+        ctx.fillRect(px(i, c) - scale, py(r) - scale, 4 * scale, 4 * scale);
       }
     }
   }
@@ -1445,7 +1451,10 @@ export function drawText(
     for (let r = 0; r < 8; r++) {
       const row = glyph[r];
       for (let c = 0; c < 7; c++) {
-        if (row[c] === '1') ctx.fillRect(px(i, c), py(r), scale, scale);
+        if (row[c] !== '1') { continue; }
+        ctx.fillRect(px(i, c), py(r), scale, scale);
+        ctx.fillRect(px(i, c) + scale, py(r), scale, scale);
+        ctx.fillRect(px(i, c), py(r) + scale, scale, scale);
       }
     }
   }
