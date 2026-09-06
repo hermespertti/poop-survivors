@@ -7,6 +7,7 @@
 
 import { PALETTE, SPRITES, drawSprite, drawSpriteFlipped, drawScaled, drawText } from './art';
 import { sfx, toggleMute, muted, musicIntensity } from './sfx';
+import { fxKill, fxGem, fxLevelUp, fxEvolve, fxBossKill, fxFlushKill, fxTick, fxDraw, fxState, fxReset } from './fx';
 
 // ---------- deterministic RNG (mulberry32) ----------
 function mulberry32(seed: number) {
@@ -724,6 +725,7 @@ function damageEnemy(e: Enemy, dmg: number, srcX: number, srcZ: number): void {
       }
     }
     G.gems.push({ x: e.x, z: e.z, val: e.xp, vx: (G.rng() - 0.5) * 40, vz: (G.rng() - 0.5) * 40, pulled: false });
+    fxKill(e.x, e.z); // M15 FX: kill burst (cosmetic queue — never touches G.rng/G stats)
     sfx('pop'); // enemy dies — a squishy little pop
   }
 }
@@ -1048,6 +1050,7 @@ function hitBoss(dmg: number, srcX: number, srcZ: number): void {
     G.chest = { x: b.x, z: b.z };
     G.items.push({ x: b.x + 20, z: b.z, kind: 'gold' });
     G.shake = 10; G.flashT = 0.4;
+    fxBossKill(b.x, b.z); // M15 FX: the boss-death shockwave
   }
 }
 // wall units are tanky; killing one leaves a gap (the wall is just an array)
@@ -1071,6 +1074,7 @@ function hitFlush(dmg: number, srcX: number, srcZ: number): void {
   G.dmgNums.push({ x: f.x, z: f.z - 12, vy: -22, t: 0.7, txt: String(Math.round(dmg)), crit: false });
   sfx('hit'); // flush takes a hit — the same clatter as an enemy hit
   if (f.hp <= 0) {
+    fxFlushKill(f.x, f.z); // M15 FX: the Flush's victory burst (before null)
     G.flush = null;
     G.gold += Math.round(500 * G.stats.goldMult); // bonus gold for killing the Flush
     sfx('win');
@@ -1105,6 +1109,7 @@ function resolveChest(): void {
     G.evolved = true;
     G.evolutionT = 2.2;
     G.flashT = 0.5; G.shake = 8;
+    fxEvolve(G.player.x, G.player.z); // M15 FX: the evolution sting
     sfx('evolution');
     lastEvo = { base: rdy.baseId, passive: req, to: rdy.toId };
   } else {
@@ -1218,7 +1223,7 @@ function checkLevelUp(): void {
     G.level++;
     G.xpNeed = xpToNext(G.level);
     G.stats.maxLevel = Math.max(G.stats.maxLevel, G.level);
-    if (G.mode === 'play') { G.mode = 'levelup'; G.options = buildOptions(); G.stats.levelUps++; sfx('levelup'); break; }
+    if (G.mode === 'play') { G.mode = 'levelup'; G.options = buildOptions(); G.stats.levelUps++; fxLevelUp(G.player.x, G.player.z); sfx('levelup'); break; }
   }
 }
 
@@ -1630,7 +1635,7 @@ function update(): void {
     if (d < magnetR) g.pulled = true;
     if (g.pulled) { g.x += (dx / d) * 160 * DT; g.z += (dz / d) * 160 * DT; }
     else { g.x += g.vx * DT; g.z += g.vz * DT; g.vx *= 0.9; g.vz *= 0.9; }
-    if (d < PLAYER.radius + 3) { G.gems.splice(i, 1); G.stats.gems++; gainXp(g.val * G.stats.xpMult); sfx('gem'); }
+    if (d < PLAYER.radius + 3) { G.gems.splice(i, 1); G.stats.gems++; fxGem(g.x, g.z); gainXp(g.val * G.stats.xpMult); sfx('gem'); }
   }
 
   // damage numbers
@@ -1669,12 +1674,13 @@ function endRun(won: boolean, flushed: boolean): void {
 }
 
 function clampNum(v: number): number { if (Number.isNaN(v)) { G.stats.nan++; return 0; } return v; }
-function startRun(seed: number): void { G = mkGame(seed); G.mode = 'play'; botDir = { x: 0, y: 0 }; orbitPos = null; orbit2Pos = null; gnatPos = null; lastEvo = null; paused = false; lastUnlocks = []; newBestTime = false; recomputeStats(); }
+function startRun(seed: number): void { G = mkGame(seed); G.mode = 'play'; botDir = { x: 0, y: 0 }; orbitPos = null; orbit2Pos = null; gnatPos = null; lastEvo = null; paused = false; lastUnlocks = []; newBestTime = false; fxReset(); recomputeStats(); }
 // ---------- rendering ----------
 const canvas = (document.getElementById('c') as HTMLCanvasElement);
 const ctx = canvas.getContext('2d')!;
 ctx.imageSmoothingEnabled = false;
 let CANVAS_SCALE = 1;
+const fxEl = document.getElementById('fx') as HTMLCanvasElement | null;
 function fitCanvas(): void {
   let scale: number;
   if (COARSE) {
@@ -1689,6 +1695,13 @@ function fitCanvas(): void {
   canvas.width = VIEW_W; canvas.height = VIEW_H;
   canvas.style.width = Math.round(VIEW_W * scale) + 'px';
   canvas.style.height = Math.round(VIEW_H * scale) + 'px';
+  // M15: the FX overlay matches the game canvas's displayed size 1:1 (its
+  // internal buffer stays 320x240 — 1 canvas px = 1 view unit, same mapping
+  // as #c — so CSS scaling keeps the two layers perfectly registered).
+  if (fxEl) {
+    fxEl.style.width = Math.round(VIEW_W * scale) + 'px';
+    fxEl.style.height = Math.round(VIEW_H * scale) + 'px';
+  }
 }
 window.addEventListener('resize', fitCanvas);
 fitCanvas();
@@ -1726,11 +1739,13 @@ function bossSprite(kind: string): { spr: any; hit: any } {
   return { spr: SPRITES[e.spr], hit: SPRITES[e.hit] };
 }
 
+let camFXx = 0, camFXy = 0; // M15: the last render's camera — fxDraw rides it
 function render(t: number): void {
-  if (G.mode === 'title') { drawTitle(t); return; }
+  if (G.mode === 'title') { drawTitle(t); camFXx = camX(); camFXy = camY(); return; }
   const sx = G.shake > 0 ? Math.sin(t * 47) * G.shake * 0.5 : 0;
   const sy = G.shake > 0 ? Math.cos(t * 39) * G.shake * 0.5 : 0;
   const cx = camX() + sx, cy = camY() + sy;
+  camFXx = cx; camFXy = cy; // M15: FX layer shares the exact (shake-included) camera
   drawFloor(cx, cy);
   // zones under everything (M13: tint lets the slime trail read as green muck)
   for (const zn of G.zones) {
@@ -2166,6 +2181,10 @@ function frame(now: number): void {
     while (acc >= DT && steps < 8) { update(); acc -= DT; steps++; }
   }
   render(now / 1000);
+  // M15 FX: age the particle sim on the WALL clock (rAF), never the game DT —
+  // a frozen run still animates its FX, and a stepped soak never advances it.
+  fxTick(now);
+  fxDraw(camFXx, camFXy);
 }
 requestAnimationFrame(frame);
 
@@ -2201,6 +2220,7 @@ const win = window;
     wall: G.wall.length, items: G.items.length,
     enemies: G.enemies.length, gems: G.gems.length, bullets: G.bullets.length, zones: G.zones.length,
     kills: G.kills, bossKilled: G.bossKilled,
+    fx: fxState(), // M15: the FX event queue (emitted works even without a GPU)
     world: { w: WORLD_W, h: WORLD_H },
     stats: {
       maxLevel: G.stats.maxLevel, levelUps: G.stats.levelUps, gems: G.stats.gems,

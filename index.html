@@ -24,11 +24,16 @@
       html, body { margin: 0; padding: 0; background: #0d0b0f; height: 100%; overflow: hidden; }
       #wrap { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; }
       canvas { image-rendering: pixelated; image-rendering: crisp-edges; display: block; }
+      /* M15: the WebGL2 FX overlay sits exactly on top of the game canvas
+         (#c is flex-centered in #wrap, which fills the viewport — so the
+         viewport center IS #c's center). pointer-events:none keeps every
+         touch/pointer/click hitting the game canvas underneath. */
+      #fx { position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%); pointer-events: none; z-index: 10; }
       * { user-select: none; -webkit-user-select: none; touch-action: none; }
     </style>
   </head>
   <body>
-    <div id="wrap"><canvas id="c"></canvas></div>
+    <div id="wrap"><canvas id="c"></canvas><canvas id="fx"></canvas></div>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>

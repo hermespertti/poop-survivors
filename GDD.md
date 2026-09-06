@@ -281,6 +281,7 @@ bars) and played by a `Chip` synth that emulates the APU channels.
 | **M12** | polish + variety + M7 gate close: 4 level-up options, bold bitmap font + title panel, og:url, Lint King tune (HP 2200→1800, ring 12→10, contact 16→13) + bot gap-dodge/heal-seek/AoE-kit | M7 balance gate 5/5 (deaths 2/10, heaven 10/10 @7.9min, boss median 6); full gate 183/0 — **DONE 2026-09-05 (§25)** |
 | **M13** | content + feel: density pass (faster ambient, 45-wave, 380 cap), boulder/shell (KB-resistant heavies), 2 chars (Cheese/Onion) + facing animation, legible digits, The Compost stage + per-stage floor detail, Cracker Ring rework (orbiting shards + damage band), mobile fullscreen, 3 new weapon mechanics (Plop Turret / Gunk Boomer / Slime Trail + evos + support passives) | full gate 209/0 across 6 suites; M7 balance soak re-run post-density 5/5 (deaths 1/10, heaven 10/10 @6.4min in the re-centered 5–10 band, boss median 6) — **DONE 2026-09-06 (§26)** |
 | **M14** | playtest round 2 resolution: enemy gunk gets its own blue `spit` sprite (no more gem-vs-bullet read), 20/40 XP walls smoothed (+600/+2400 spikes → ×2.5, 495/1153), ring DPS-growth cap (dmgPerLvl 3→1.5, 141→86 DPS) + enemy damage ramp eDmg (1.0→1.3, the soak-forced fix after the ring nerf took deaths 1→0) | M7 balance gate 5/5 (deaths 3/10, heaven 10/10 @7.2min, boss median 6); full gate 209/0 — **DONE 2026-09-06 (§27)** |
+| **M15** | the WebGL2 FX pass (locked Q2): GPU additive particles + shockwave rings on an overlay canvas, cosmetic-only particle event queue (kill/gem/level-up/evolution/boss-death/flush-victory), game logic stays pure CPU so deterministic soaks don't move; `src/fx.ts` + `#fx` overlay + `m15` suite (event contract + determinism-with-FX + GL-error soak) | full gate 230/0 across 7 suites (m15 21/0); balance soak must reproduce M14 exactly — **DONE 2026-09-06 (§28)** |
 
 ## 15. Decisions (locked 2026-08-31, user)
 
@@ -421,7 +422,7 @@ the pixel font was hard to read ("varmaan tyylivalinta").
     ones people read, gameplay HUD stays 1×.
   - Verified by vision check: crisp outline, no collision/cutoff/smear.
 
-## 20. Playtest round 2 (anon, 2026-09-03) — PARKED, not yet addressed
+## 20. Playtest round 2 (anon, 2026-09-03) — RESOLVED in M14 (§27), 2026-09-06
 
 1. **~lvl 40 a shooter spawns whose bullets look identical to the XP gems**
    — the spitter's gunk shots (`kind:'gunk'` renders the green `gem` sprite).
@@ -883,3 +884,77 @@ death shape §25 describes), heaven **10/10 median 7.2 min** (band 5–10),
 boss median **6/6** (target ≥2), console clean. The endgame is a survival
 test again without being a wall: the ring does its job (keep you alive), the
 damage ramp decides whether your build does too.
+
+## 28. M15 the WebGL2 FX pass (2026-09-06) — the locked Q2 decision, shipped
+
+Q2 (locked 2026-08-31, §9) committed to *"a WebGL2 FX pass on top —
+GPU-rendered additive particles/shockwaves/flash (hit sparks, XP sparkle
+trails, level-up and evolution stings, boss death). Game logic stays pure
+CPU + fixed timestep so the headless bot soaks remain deterministic; the FX
+layer is cosmetic and reads a particle event queue."* Verified unbuilt
+through M14: zero WebGL references in src/. M15 ships it.
+
+**Architecture (per the Q2 spec, not improvised):**
+- `src/fx.ts` is a standalone module with its own 320×240 overlay canvas
+  (`#fx`, z-above `#c`, pointer-transparent, fit 1:1 to the game canvas in
+  `fitCanvas()` so CSS scaling keeps the two layers registered). One
+  interleaved VBO, two draw calls: particles as additive `gl.POINTS` (soft
+  round falloff in the fragment shader), shockwave rings as
+  `TRIANGLE_STRIP` quads whose band is computed per-fragment in world space
+  (a bright 5-unit ring at the current radius, fading with life). Camera is
+  a uniform fed the *exact* render camera (shake included) — FX ride the
+  same screen as the sprites, no parallax drift.
+- The game logic in `src/main.ts` never imports the FX sim; it only EMITS
+  into the queue at six real sites: enemy death (`fxKill`), gem pickup
+  (`fxGem`), level-up prompt (`fxLevelUp`), chest evolution (`fxEvolve`),
+  boss death (`fxBossKill`), Flush kill/victory (`fxFlushKill`). The sim
+  ages on the rAF WALL clock inside `frame()`, never on the game DT — a
+  frozen run still animates its FX, a stepped soak never advances it.
+- Every palette-true color (Q3: the 16-color palette — gold/cream/green/
+  white/ice/blue, no new hues).
+
+**The determinism guarantee (the whole point of the Q2 split), proven in
+`test/m15.mjs` (new suite, 21 asserts, now in the gate):**
+- **Event contract:** each of the six paths, driven through the REAL game
+  code (ring sweep → death → fxKill; probe-walked gem pickup; gainXp →
+  level-up; 1hp boss + ring → hitBoss → chest → resolveChest → fxEvolve;
+  1hp Flush → hitFlush → victory), emits **exactly one** typed event.
+  Per-type counters on the `__cap` probe keep the assertion clean — the
+  boss sheds minions the test ring also kills, and those stray fxKill
+  events must not pollute the boss/evolve/flush counts. Typed counts
+  reconcile to the lifetime total (no untyped emit).
+- **Sim untouched:** two identical 120-step frozen runs WITH the FX layer
+  emitting are byte-identical (x,z,kills,time,fx.emitted per step) — the
+  Q2 rule that the FX layer never moves the CPU sim.
+- **GL health:** WebGL2 was available in the gate's headless chromium
+  (`--use-gl=angle --use-angle=vulkan`), so the pipeline actually compiled,
+  linked, and rendered — a 5s real-time soak left **zero GL errors**
+  (`getError()` polled per frame, exposed on the probe).
+- **Cosmetic-fail-safe:** no WebGL2 (older phones, some headless setups) →
+  every call is a counted no-op, the game plays exactly as pre-M15; the
+  queue still counts, so the contract test passes either way. `fxTick`/
+  `fxDraw` are try/catch-wrapped and recover from context loss — a
+  cosmetic layer must never throw out of the rAF callback and trip the
+  gate's console check mid-soak.
+
+**Test-harness lessons (why m15's bot is what it is):** the whip is a
+*directional* beam — a frozen-step harness that parks the player still
+whiffs at off-screen targets (bullet=1, kill=0). The deterministic killer
+is the crackerring: a full 2π damage band at r=34+2·lvl around the
+player that hits enemies/wall/boss/flush regardless of facing. The boss
+spawns ~200u out and drifts, so the bot re-parks each step (target into
+the band, or player at the band around a 1hp boss). `setFlushHp`/`set
+bossHp`/`setEnemyPos`/`nearestGem` do the placement; the real damage and
+death paths still fire.
+
+**M15 gate: 230/0 GREEN across 7 suites** (m1 23, m2 36, m3 29, m4 78,
+m11 15, m15 21, m6 28) — the FX layer is a no-op for every pre-existing
+assertion.
+
+**M15 balance soak (official `test/balance.mjs`, FX canvas + live WebGL2
+context rendering every real-time frame): 5/5 GREEN, byte-identical to
+M14** — deaths **3/10**, the *same three seeds at the same times* (7777
+@1788s lv 53, 31415 @1724s lv 52, 1618 @1798s lv 54), heaven **10/10 @
+7.2 min**, boss median **6/6**, console clean. The Q2 split is proven at
+full-run scale, not just in the 120-step probe: GPU particles rendering
+every frame, the deterministic sim doesn't move a single tick.
