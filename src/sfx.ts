@@ -12,12 +12,31 @@ let started = false;
 let voiceCount = 0; // concurrent one-shots (voice cap)
 setInterval(() => { if (voiceCount > 0) voiceCount = 0; }, 100); // decay window
 
+// ---------- music: dual-source. (1) a REAL generated track (M16: a local
+// HeartMuLa "banger", public/music.mp3, looped via an <audio> element) with
+// (2) the old synth chiptune as fallback when the file is absent/failed.
+// The synth stays for the title screen's first seconds and for no-file
+// fallback; the mp3 takes over once it loads. musicIntensity() drives BOTH
+// (the boss-rush duck/intensify API is unchanged — main.ts just calls it).
+const MUSIC_SRC = './music.mp3';
+const musicEl: HTMLAudioElement = new Audio(MUSIC_SRC);
+musicEl.loop = true;
+musicEl.preload = 'auto';
+musicEl.crossOrigin = 'anonymous';
+let mp3Ready = false;
+let mp3Active = false; // the real track is playing — the synth is ducked out
+let mp3Src: MediaElementAudioSourceNode | null = null; // created ONCE per element (WebAudio rule)
+musicEl.addEventListener('canplaythrough', () => { mp3Ready = true; });
+musicEl.addEventListener('error', () => { mp3Ready = false; });
+musicEl.volume = 0.55; // relative to master (bump above the SFX bed, under clipping)
+
 const MUTE_KEY = 'poop-survivors-mute';
 export function muted(): boolean { return localStorage.getItem(MUTE_KEY) === '1'; } // M11: exported for the mobile mute button label
 export function toggleMute(): boolean {
   const m = muted();
   localStorage.setItem(MUTE_KEY, m ? '0' : '1');
-  if (master) master.gain.value = m ? 0.6 : 0;
+  if (master) master.gain.value = m ? 0.75 : 0;
+  if (musicEl) musicEl.muted = m;
   return !m;
 }
 
@@ -25,15 +44,36 @@ function ensure(): boolean {
   if (!A) return false;
   if (!started) {
     started = true;
+    // M16: gain -> compressor -> destination. The snappy attack pass pushed
+    // per-sound volumes up; under heavy combat + music the bus can sum past
+    // 1.0, and a compressor makes that a transient "punch" instead of a clip.
+    const comp = A.createDynamicsCompressor();
+    comp.threshold.value = -18; comp.knee.value = 12; comp.ratio.value = 8;
+    comp.attack.value = 0.003; comp.release.value = 0.15;
+    comp.connect(A.destination);
     master = A.createGain();
-    master.gain.value = muted() ? 0 : 0.6;
-    master.connect(A.destination);
+    master.gain.value = muted() ? 0 : 0.75; // M16: 0.6->0.75 — playtest R3 "could be more snappier/louder"
+    master.connect(comp);
     musicGain = A.createGain();
     musicGain.gain.value = 0.25;
     musicGain.connect(master);
     startMusic();
   }
   if (A.state === 'suspended') A.resume();
+  // M16: the real track takes over as soon as it's ready — the synth loop
+  // keeps playing underneath until then (no audible gap on slow devices).
+  // createMediaElementSource must be called ONCE per element (WebAudio),
+  // so cache the node; the file's absence (404) keeps mp3Ready false and
+  // the synth fallback just plays — the game is identical to pre-M16.
+  if (mp3Ready && A.state === 'running') {
+    const m = master;
+    if (!mp3Src && m) {
+      try { mp3Src = A.createMediaElementSource(musicEl); mp3Src.connect(m); } catch { mp3Src = null; }
+    }
+    musicEl.muted = muted();
+    if (musicEl.paused) void musicEl.play().then(() => { mp3Active = true; }).catch(() => { /* autoplay still pending */ });
+    else mp3Active = true;
+  }
   return true;
 }
 
@@ -82,19 +122,25 @@ export function sfx(kind: string): void {
   // loop stays real-time
   if (voiceCount > 8) return;
   voiceCount++;
-  if (kind === 'shoot') blip(620, 0.07, 'square', 0.05, 0.6);
-  else if (kind === 'hit') noise(0.06, 0.10, 1800);
-  else if (kind === 'levelup') { blip(520, 0.09, 'square', 0.12); setTimeout(() => blip(660, 0.09, 'square', 0.12), 90); setTimeout(() => blip(780, 0.14, 'square', 0.12), 180); }
-  else if (kind === 'boss') { blip(160, 0.3, 'sawtooth', 0.16, 0.5); noise(0.4, 0.12, 300); }
-  else if (kind === 'chest') { blip(440, 0.08, 'triangle', 0.10); setTimeout(() => blip(550, 0.08, 'triangle', 0.10), 80); setTimeout(() => blip(660, 0.12, 'triangle', 0.10), 160); }
-  else if (kind === 'evolution') { blip(392, 0.1, 'triangle', 0.12); setTimeout(() => blip(523, 0.1, 'triangle', 0.12), 100); setTimeout(() => blip(659, 0.1, 'triangle', 0.12), 200); setTimeout(() => blip(784, 0.2, 'triangle', 0.12), 300); }
-  else if (kind === 'flush') { noise(0.8, 0.14, 900); blip(80, 0.6, 'sawtooth', 0.12, 0.4); }
-  else if (kind === 'death') { blip(300, 0.4, 'sawtooth', 0.14, 0.3); noise(0.3, 0.10, 500); }
-  else if (kind === 'win') { blip(523, 0.1, 'square', 0.12); setTimeout(() => blip(659, 0.1, 'square', 0.12), 110); setTimeout(() => blip(784, 0.1, 'square', 0.12), 220); setTimeout(() => blip(1046, 0.3, 'square', 0.12), 330); }
-  else if (kind === 'pickup') { blip(880, 0.06, 'square', 0.09); setTimeout(() => blip(1320, 0.08, 'square', 0.08), 40); }
-  else if (kind === 'gem') { blip(1046, 0.04, 'triangle', 0.05); }
-  else if (kind === 'hurt') { blip(220, 0.12, 'sawtooth', 0.10, 0.5); noise(0.08, 0.07, 500); }
-  else if (kind === 'pop') { blip(320, 0.05, 'triangle', 0.07, 1.8); }
+  // M16 audio pass (playtest R3: "attacks too quiet + too slow, levelup is
+  // the only one that feels right"). Levelup works because it's FAST notes
+  // with NO slow pitch glide — the old attacks all had long downward slides
+  // (0.12–0.4s) that read as a slow "whooo". Fix: short, steep, LOUD — a
+  // broadband transient (noise click) + a low thump = a punchy "crack", not
+  // a glide. Every attack is <70ms and louder than before.
+  if (kind === 'shoot') { blip(720, 0.05, 'square', 0.11, 0.45); noise(0.025, 0.07, 4500); }
+  else if (kind === 'hit') { noise(0.05, 0.20, 3200); blip(150, 0.06, 'sine', 0.17, 0.5); }
+  else if (kind === 'levelup') { blip(520, 0.09, 'square', 0.13); setTimeout(() => blip(660, 0.09, 'square', 0.13), 90); setTimeout(() => blip(780, 0.14, 'square', 0.13), 180); }
+  else if (kind === 'boss') { blip(150, 0.22, 'sawtooth', 0.17, 0.55); noise(0.3, 0.13, 400); }
+  else if (kind === 'chest') { blip(440, 0.08, 'triangle', 0.11); setTimeout(() => blip(550, 0.08, 'triangle', 0.11), 80); setTimeout(() => blip(660, 0.12, 'triangle', 0.11), 160); }
+  else if (kind === 'evolution') { blip(392, 0.1, 'triangle', 0.13); setTimeout(() => blip(523, 0.1, 'triangle', 0.13), 100); setTimeout(() => blip(659, 0.1, 'triangle', 0.13), 200); setTimeout(() => blip(784, 0.2, 'triangle', 0.13), 300); }
+  else if (kind === 'flush') { noise(0.7, 0.16, 1100); blip(90, 0.5, 'sawtooth', 0.14, 0.4); }
+  else if (kind === 'death') { blip(280, 0.3, 'sawtooth', 0.15, 0.35); noise(0.25, 0.11, 600); }
+  else if (kind === 'win') { blip(523, 0.1, 'square', 0.13); setTimeout(() => blip(659, 0.1, 'square', 0.13), 110); setTimeout(() => blip(784, 0.1, 'square', 0.13), 220); setTimeout(() => blip(1046, 0.3, 'square', 0.13), 330); }
+  else if (kind === 'pickup') { blip(880, 0.06, 'square', 0.10); setTimeout(() => blip(1320, 0.08, 'square', 0.09), 40); }
+  else if (kind === 'gem') { blip(1320, 0.045, 'triangle', 0.09); }
+  else if (kind === 'hurt') { blip(170, 0.09, 'sawtooth', 0.16, 0.5); noise(0.06, 0.12, 900); }
+  else if (kind === 'pop') { blip(300, 0.045, 'square', 0.11, 2.2); noise(0.03, 0.10, 3500); }
 }
 
 // ---------- music: 8-bar loop, two voices + noise hat, scheduled ahead ----------
@@ -130,6 +176,8 @@ const TOTAL_STEPS = STEPS * 4; // 4 loops of the pattern, then it restarts
 function freqFrom(base: number, semi: number): number { return base * Math.pow(2, semi / 12); }
 function scheduleMusic(): void {
   const ac = A; if (!ac || !musicGain) return;
+  if (mp3Active) return; // M16: the real track is playing — the synth is the
+  // fallback only (two different tempos at once would clash, not layer)
   // schedule the next ~0.5s of steps ahead
   while (musicStep * STEP < ac.currentTime + 0.5 - musicEpoch) {
     const step = musicStep % STEPS;
@@ -171,10 +219,14 @@ function startMusic(): void {
 
 // pause/resume with the game loop (title/dead: keep music, lower gain)
 export function musicIntensity(level: number): void {
-  if (!musicGain || muted()) return;
-  musicGain.gain.value = 0.25 * Math.min(1.6, level);
+  if (muted()) return;
+  if (musicGain) musicGain.gain.value = 0.25 * Math.min(1.6, level);
+  // M16: the real track rides the same pressure curve (louder as the
+  // screen fills / a boss shows) — the boss-rush duck API is unchanged.
+  if (mp3Ready) musicEl.volume = 0.5 + 0.25 * Math.min(1.0, level);
 }
 export function setMuted(m: boolean): void {
   localStorage.setItem(MUTE_KEY, m ? '1' : '0');
-  if (master) master.gain.value = m ? 0 : 0.6;
+  if (master) master.gain.value = m ? 0 : 0.75;
+  musicEl.muted = m;
 }

@@ -1,7 +1,7 @@
 // POOP SURVIVORS offline shell — one HTML + a hashed JS bundle + icons.
 // Strategy (prisma-panic pattern): network-first for the shell (a new deploy
 // lands on next load), cache-first for hashed assets (immutable, offline play).
-const VERSION = 'poop-survivors-v1';
+const VERSION = 'poop-survivors-v2';
 const SHELL = './';
 
 self.addEventListener('install', (e) => {
@@ -42,7 +42,7 @@ self.addEventListener('fetch', (e) => {
       (hit) =>
         hit ||
         fetch(req).then((res) => {
-          if (res.ok && (url.pathname.startsWith('/assets/') || /\.(png|svg|webmanifest|ico|jpg|jpeg|webp)$/.test(url.pathname))) {
+          if (res.ok && (url.pathname.startsWith('/assets/') || /\.(png|svg|webmanifest|ico|jpg|jpeg|webp|mp3|ogg|wav)$/.test(url.pathname))) {
             const copy = res.clone();
             caches.open(VERSION).then((c) => c.put(req, copy));
           }

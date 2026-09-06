@@ -282,6 +282,7 @@ bars) and played by a `Chip` synth that emulates the APU channels.
 | **M13** | content + feel: density pass (faster ambient, 45-wave, 380 cap), boulder/shell (KB-resistant heavies), 2 chars (Cheese/Onion) + facing animation, legible digits, The Compost stage + per-stage floor detail, Cracker Ring rework (orbiting shards + damage band), mobile fullscreen, 3 new weapon mechanics (Plop Turret / Gunk Boomer / Slime Trail + evos + support passives) | full gate 209/0 across 6 suites; M7 balance soak re-run post-density 5/5 (deaths 1/10, heaven 10/10 @6.4min in the re-centered 5–10 band, boss median 6) — **DONE 2026-09-06 (§26)** |
 | **M14** | playtest round 2 resolution: enemy gunk gets its own blue `spit` sprite (no more gem-vs-bullet read), 20/40 XP walls smoothed (+600/+2400 spikes → ×2.5, 495/1153), ring DPS-growth cap (dmgPerLvl 3→1.5, 141→86 DPS) + enemy damage ramp eDmg (1.0→1.3, the soak-forced fix after the ring nerf took deaths 1→0) | M7 balance gate 5/5 (deaths 3/10, heaven 10/10 @7.2min, boss median 6); full gate 209/0 — **DONE 2026-09-06 (§27)** |
 | **M15** | the WebGL2 FX pass (locked Q2): GPU additive particles + shockwave rings on an overlay canvas, cosmetic-only particle event queue (kill/gem/level-up/evolution/boss-death/flush-victory), game logic stays pure CPU so deterministic soaks don't move; `src/fx.ts` + `#fx` overlay + `m15` suite (event contract + determinism-with-FX + GL-error soak) | full gate 230/0 across 7 suites (m15 21/0); balance soak must reproduce M14 exactly — **DONE 2026-09-06 (§28)** |
+| **M16** | playtest round 3 audio pass: snappy attack SFX (no slow glides, noise-transient punch, master 0.6→0.75 + DynamicsCompressor), dual-source music (looped mp3 via WebAudio with the synth sequencer as fallback; `musicIntensity` drives both), 132BPM kick-loop stopgap at `public/music.mp3`, local HeartMuLa banger rendering on CPU (swaps in with zero code change) | gate re-run post-audio (console-clean is the smoke check); playtest R4 — **IN PROGRESS 2026-09-06 (§29)** |
 
 ## 15. Decisions (locked 2026-08-31, user)
 
@@ -958,3 +959,64 @@ M14** — deaths **3/10**, the *same three seeds at the same times* (7777
 7.2 min**, boss median **6/6**, console clean. The Q2 split is proven at
 full-run scale, not just in the 120-step probe: GPU particles rendering
 every frame, the deterministic sim doesn't move a single tick.
+
+## 29. M16 playtest round 3 + audio pass (2026-09-06) — the snappy SFX and the local-AI banger
+
+**Playtest round 3 (lex, PC, post-M15 build):**
+1. "Not sure I'm hearing any attack sounds on the PC" — the pops are
+   *there* but quiet
+2. "Level ups make a sound" — the only SFX that reads
+3. "No banger soundtrack" — the code-sequenced chiptune bed isn't a track
+4. "The sounds seem very slow apart from the level up"
+
+**Diagnosis (in-code, matched the feedback exactly):**
+- Every attack SFX had a **slow downward pitch glide** (shoot: 0.6× over
+  70ms, hurt: 0.5× over 120ms, death: 0.3× over 400ms) at **5–10% relative
+  volume** — a slow "whooo" you can only hear if you're listening for it.
+- Level-up worked because it's *fast notes with no glide* — the feedback
+  confirmed the fix direction by accident.
+- Master volume was 0.6 with every SFX under 12% — quiet by construction.
+- Music was a two-voice square/triangle loop at 25% of an already-quiet
+  master: a pulse bed, not a banger. §11's research said "the real VS OST
+  is retro-flavored but *modernly produced*" — the code sequencer only
+  ever delivered the retro half.
+
+**Fix 1 — snappy attack SFX (shipped):**
+- No slow glides: attacks are now <70ms, steep, and louder (shoot 5%→11%,
+  hit 10%→20%+thump, gem 5%→9% at 1320Hz, hurt 10%→16%).
+- Punch over glide: hits/pops layer a broadband **noise transient** (a
+  click) under a low sine thump — that's the difference between "crack"
+  and "whooft".
+- Master 0.6→0.75 and a **DynamicsCompressor on the master bus**
+  (threshold -18dB, ratio 8:1): the louder SFX + music can now sum hot
+  without clipping — the loudness reads as transient punch.
+- The voice cap (8 one-shots / 100ms) is untouched — heavy combat still
+  can't tank the real-time loop.
+
+**Fix 2 — a real banger via the local-AI upgrade path (in progress):**
+§11 documented the option: "HeartMuLa (local GPU music-gen) can render a
+richer 'modern VS' arrangement as an alternate track — A/B it if the code
+sequencer ever feels thin." Playtest R3 is exactly that trigger. Setup
+per the `heartmula` skill (3B model, HeartCodec, both required patches —
+RoPE cache re-init + `ignore_mismatched_sizes` on both HeartCodec load
+sites — verified against the installed torchtune 0.4.0 before applying).
+No NVIDIA GPU on this box, so **CPU mode**: ~6.1s/it × 2250 steps ≈ **3.7h**
+per 3-min render (the skill's 30–60 min estimate assumed GPU RTF≈1;
+lazy_load + bf16 don't change the CPU math).
+- **Stopgap shipped now:** `public/music.mp3` is a 7.3s four-on-the-floor
+  kick loop at the game's existing 132 BPM (generated, 128kbps) — seamless
+  loop, instant pulse bed. The `sfx.ts` music layer is now **dual-source**:
+  the mp3 (looped `<audio>` via `createMediaElementSource`, one cached
+  source node per the WebAudio rule) takes over when `canplaythrough`
+  fires; the old synth sequencer is the fallback until then and forever
+  after a 404 (the game is identical to pre-M16 with no file).
+  `musicIntensity()` drives BOTH — the boss-rush duck/intensify API is
+  unchanged; the real track's volume rides the same pressure curve
+  (0.5→0.75 as the screen fills / a boss shows).
+- **The HeartMuLa banger** (rock/banger tags, original "Poop Survivors"
+  lyrics — VS-true: croutons, Colonel C, Super Fart) is rendering in the
+  background; when it lands it simply **replaces `public/music.mp3`** —
+  zero code change, one commit. If the CPU render proves to be a dud we
+  keep the kick loop + retuned synth (the §11 default) and log the A/B.
+- SW: v1→v2 bump + `.mp3` added to the cacheable-asset pattern (offline
+  play must keep the soundtrack).
