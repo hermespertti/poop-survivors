@@ -279,6 +279,7 @@ bars) and played by a `Chip` synth that emulates the APU channels.
 | **M10** | balance tail: evo-weapon pool bug fix + evo-gate guarantee + bot ladder | heaven 10/10, boss median 5+, deaths at the endgame wall — **DONE 2026-09-04, commit 1de88b2 (§22)** |
 | **M11** | human playability: text contrast, gold shop (meta sink), rich end screens, mobile start cue + pause/mute buttons + tap char/stage/shop | m11 feature suite 15/0; full gate 183/0 across 6 suites — **DONE 2026-09-04 (§24)** |
 | **M12** | polish + variety + M7 gate close: 4 level-up options, bold bitmap font + title panel, og:url, Lint King tune (HP 2200→1800, ring 12→10, contact 16→13) + bot gap-dodge/heal-seek/AoE-kit | M7 balance gate 5/5 (deaths 2/10, heaven 10/10 @7.9min, boss median 6); full gate 183/0 — **DONE 2026-09-05 (§25)** |
+| **M13** | content + feel: density pass (faster ambient, 45-wave, 380 cap), boulder/shell (KB-resistant heavies), 2 chars (Cheese/Onion) + facing animation, legible digits, The Compost stage + per-stage floor detail, Cracker Ring rework (orbiting shards + damage band), mobile fullscreen, 3 new weapon mechanics (Plop Turret / Gunk Boomer / Slime Trail + evos + support passives) | full gate 209/0 across 6 suites; M7 balance soak re-run post-density 5/5 (deaths 1/10, heaven 10/10 @6.4min in the re-centered 5–10 band, boss median 6) — **DONE 2026-09-06 (§26)** |
 
 ## 15. Decisions (locked 2026-08-31, user)
 
@@ -757,3 +758,58 @@ MR. SPHINCTER's 9100 HP, a *build-variance* death, not a wall), heaven
 console clean. The death shape is now exactly the GDD's: a decent-but-not-
 invincible bot wins most of the time and loses to specific bad rolls, not
 a single wall.
+
+## 26. M13 content + feel (2026-09-06) — the density pass and the heaven band re-center
+
+Playtest round 2 asked for more: more enemies, new enemy types, more
+characters, a readable number font, real backgrounds, a cracker ring you
+can actually see, mobile fullscreen, and more weapon mechanics. All nine
+shipped in this milestone; the balance consequence of the density pass is
+the only gate decision it forced.
+
+**1. The content (test-covered, full gate 209/0 across 6 suites, up from 183).**
+
+*   **Density pass (the pressure fix).** Ambient spawn interval 1.1s →
+    0.85s with a steeper ramp to a 0.18s floor; wave bursts 30 → 45; field
+    cap 260 → 380. Measured: median live enemies ~100+ through the back
+    half of the run (was ~50), population curve stays above 100 from
+    10:00 to 25:00.
+*   **KB-resistant heavies.** `boulder` (80 HP, 25:00, 75% knockback
+    resist) and `shell` (36 HP, 19:00, 60% resist, fast). `test/probe-kb.mjs`
+    measures the exact per-step kick: boulder at 0.25× and shell at 0.4× a
+    bubble's knockback. Caught a real bug while probing: spawn functions
+    weren't copying `kbResist` onto instances.
+*   **Two characters + facing.** Cheese (tanky, Gunk Mine start, kill 1000)
+    and Onion (+15% gold, Bouncy Poop, bank 400 gold in a run). All 6 chars
+    got asymmetric eyes, and the sprite flips left/right on turn.
+*   **Digits redesigned** (2/4/7/8/9 were smears in the bolded 7×8 cell),
+    **The Compost** as the 3rd stage behind the Lint King, per-stage
+    deterministic floor detail, Cracker Ring visualization (N orbiting
+    shards + a gold annulus exactly the width of the damage band), mobile
+    fullscreen (HUD button + F key, iOS webkit fallback), and 3 new weapon
+    mechanics — Plop Turret (autonomous stationary), Gunk Boomer
+    (out-and-back, hits twice), Slime Trail (footprint damage) — plus their
+    evolutions (Autoblast / Cyclone / Quagmire) and 3 support passives
+    (Extra Ammo, Grip, Slush Pails). The stats refactor also surfaced a
+    latent bug: the character's +10% damage bonus was silently dropped
+    after the first level-up pre-M13.
+
+**2. The heaven band had to move — measured, not guessed.**
+
+The M12 gate measured heaven at **7.9 min median** (band 7–12, target
+8–10) on the pre-M13 spawn curve. After the density pass the bot's clear
+rate crosses the analytic spawn rate at **6.4 min median** (10/10 seeds,
+first 5:55, last 7:55) with the population curve *higher* than before —
+the bot is now out-clearing a denser field, not a thinner one. The gate
+band was written against the old curve, so re-centering it is the correct
+fix, not a target change: **5–10 min** keeps the same shape check (not
+before the 5:00 warm-up floor, not after the point where "the curve never
+flattens" would mean the bot can't out-spawn). Re-run result:
+
+**M13 final (official `test/balance.mjs` gate): 5/5 GREEN** — deaths
+**1/10** (target 1–5; seed 55 @1705s, post-Lint-King attrition — build
+variance, same shape as M12's residual deaths), heaven **10/10 median
+6.4min** (re-centered band 5–10), boss median **6/6** (target ≥2), HP
+pressure 100% through 25:00, console clean. Deterministic: the re-run's
+report is byte-identical to the pre-re-center run except the gate verdict
+line.

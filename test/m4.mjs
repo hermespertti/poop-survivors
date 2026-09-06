@@ -48,8 +48,10 @@ ok(a === c2, 'determinism: identical seed+input → identical trajectory (regres
 await page.evaluate(() => window.__cap.unfreeze());
 
 // ============ PART B: the content ============
-// B1: all 12 base weapons fire
-for (const id of ['fartwhip', 'plopcannon', 'crackerring', 'puddle', 'bouncy', 'stinkaura', 'fartbomb', 'turd', 'spritz', 'mine', 'chainfart', 'gnat']) {
+// B1: all 15 base weapons fire (M13: + turret, boomer, trail — the mechanics
+// beyond shoot/orbit/ring. The trail needs movement: it drops BEHIND the
+// player, so nudge right while it's under test.)
+for (const id of ['fartwhip', 'plopcannon', 'crackerring', 'puddle', 'bouncy', 'stinkaura', 'fartbomb', 'turd', 'spritz', 'mine', 'chainfart', 'gnat', 'turret', 'boomer', 'trail']) {
   const r = await page.evaluate((wid) => {
     const c = window.__cap;
     c.restartPlay(555); c.freeze();
@@ -57,6 +59,7 @@ for (const id of ['fartwhip', 'plopcannon', 'crackerring', 'puddle', 'bouncy', '
     c.spawn(3);
     const st = c.state();
     for (let i = 0; i < 3; i++) c.setEnemyPos(i, st.x + 20, st.z);
+    if (wid === 'trail') c.move(1, 0);
     let shots = 0;
     for (let i = 0; i < 120; i++) { c.step(); const s = c.state(); shots = s.stats.shots[wid] || 0; if (shots > 0) break; }
     return shots;
@@ -86,19 +89,30 @@ const passiveProbe = await page.evaluate(() => {
   out.tp = c.state().stats.xpMult;
   c.givePassive('goldrush', 5);
   out.goldrush = c.state().stats.goldMult; // M7
+  // M13: the three new weapon-support passives
+  c.givePassive('ammo', 2);
+  out.ammo = c.state().stats.turretCap;
+  c.givePassive('grip', 3);
+  out.grip = c.state().stats.boomerMult;
+  c.givePassive('slush', 2);
+  out.slush = c.state().stats.trailMult;
   return out;
 });
 ok(passiveProbe.breakfast === 175, `breakfast x3 → maxHp 175 (got ${passiveProbe.breakfast})`);
 ok(Math.abs(passiveProbe.gloves - 1.2) < 0.001, `gloves x2 → projSpeed 1.20 (got ${passiveProbe.gloves})`);
 ok(Math.abs(passiveProbe.widestink - 1.1) < 0.001, `widestink x1 → area 1.10 (got ${passiveProbe.widestink})`);
 ok(Math.abs(passiveProbe.sticky - 1.1) < 0.001, `sticky x1 → duration 1.10 (got ${passiveProbe.sticky})`);
-ok(Math.abs(passiveProbe.meats - 1.3) < 0.001, `meats x3 → dmg 1.30 (got ${passiveProbe.meats})`);
+ok(Math.abs(passiveProbe.meats - 1.43) < 0.001, `meats x3 → dmg 1.43 (1.1 crouton x 1.3, M13, got ${passiveProbe.meats})`);
 ok(Math.abs(passiveProbe.quick - 0.84) < 0.001, `quick x2 → cd 0.84 (got ${passiveProbe.quick})`);
 ok(Math.abs(passiveProbe.slippers - 1.1) < 0.001, `slippers x1 → speed 1.10 (got ${passiveProbe.slippers})`);
 ok(Math.abs(passiveProbe.tp - 1.4) < 0.001, `tp x5 → xp 1.40 (got ${passiveProbe.tp})`);
 ok(Math.abs(passiveProbe.goldrush - 1.75) < 0.001, `goldrush x5 → gold 1.75 (M7, got ${passiveProbe.goldrush})`);
+// M13: the three new weapon-support passives
+ok(passiveProbe.ammo === 3, `ammo x2 → turretCap 3 (got ${passiveProbe.ammo})`);
+ok(Math.abs(passiveProbe.grip - 1.3) < 0.001, `grip x3 → boomer range 1.30 (got ${passiveProbe.grip})`);
+ok(Math.abs(passiveProbe.slush - 1.4) < 0.001, `slush x2 → slime width 1.40 (got ${passiveProbe.slush})`);
 
-// B3: ALL 8 evolutions resolve (base maxed + passive + chest)
+// B3: ALL 15 evolutions resolve (base maxed + passive + chest)
 const EVO_PAIRS = [
   ['fartwhip', 'quick', 'superfart'],
   ['plopcannon', 'sticky', 'stickyplop'],
@@ -112,6 +126,9 @@ const EVO_PAIRS = [
   ['mine', 'fuse', 'minelord'], // M8: the 10th
   ['chainfart', 'chain', 'chainstorm'], // M8: the 11th
   ['gnat', 'winged', 'supergnat'], // M8: the 12th
+  ['turret', 'ammo', 'autoblast'], // M13: the 13th
+  ['boomer', 'grip', 'cyclone'], // M13: the 14th
+  ['trail', 'slush', 'quagmire'], // M13: the 15th
 ];
 for (const [base, passive, to] of EVO_PAIRS) {
   const r = await page.evaluate((ar) => {
@@ -150,11 +167,16 @@ const charProbe = await page.evaluate(() => {
   out.hotdogLocked = c.selectChar('hotdog');
   out.avocadoLocked = c.selectChar('avocado');
   out.plungerLocked = c.selectChar('plunger');
+  out.cheeseLocked = c.selectChar('cheese');
+  out.onionLocked = c.selectChar('onion');
   // unlock via meta
   c.metaGive('survive10'); c.metaGive('kills500'); c.metaGive('boss3');
+  c.metaGive('minekill'); c.metaGive('goldrun'); // M13
   out.hotdogOk = c.selectChar('hotdog');
   out.avocadoOk = c.selectChar('avocado');
   out.plungerOk = c.selectChar('plunger');
+  out.cheeseOk = c.selectChar('cheese');
+  out.onionOk = c.selectChar('onion');
   // each character's start weapon + bonus
   const st = c.state();
   out.char = st.char;
@@ -169,19 +191,31 @@ const charProbe = await page.evaluate(() => {
   out.armorAvocado = c.state().armor;
   c.selectChar('plunger');
   c.restart(7); out.weaponsPlunger = c.state().weapons; // M7
+  c.selectChar('cheese');
+  c.restart(7); out.weaponsCheese = c.state().weapons; out.hpCheese = c.state().maxHp; // M13: +25 HP
+  c.selectChar('onion');
+  c.restart(7); out.weaponsOnion = c.state().weapons; out.goldOnion = c.state().stats.goldMult; // M13: +15% gold
   return out;
 });
 ok(charProbe.hotdogLocked.err === 'locked: survive10', `hotdog locked until survive10 (${JSON.stringify(charProbe.hotdogLocked)})`);
 ok(charProbe.avocadoLocked.err === 'locked: kills500', `avocado locked until kills500 (${JSON.stringify(charProbe.avocadoLocked)})`);
 ok(charProbe.plungerLocked.err === 'locked: boss3', `plunger locked until boss3 (M7) (${JSON.stringify(charProbe.plungerLocked)})`);
+ok(charProbe.cheeseLocked.err === 'locked: minekill', `cheese locked until minekill (M13, ${JSON.stringify(charProbe.cheeseLocked)})`);
+ok(charProbe.onionLocked.err === 'locked: goldrun', `onion locked until goldrun (M13, ${JSON.stringify(charProbe.onionLocked)})`);
 ok(charProbe.hotdogOk.ok === true, 'hotdog selectable after unlock');
 ok(charProbe.avocadoOk.ok === true, 'avocado selectable after unlock');
 ok(charProbe.plungerOk.ok === true, 'plunger selectable after unlock (M7)');
+ok(charProbe.cheeseOk.ok === true, 'cheese selectable after unlock (M13)');
+ok(charProbe.onionOk.ok === true, 'onion selectable after unlock (M13)');
 ok(charProbe.weaponsCrouton.fartwhip === 1, 'crouton starts Fart Whip');
 ok(charProbe.weaponsHotdog.plopcannon === 1, 'hotdog starts Plop Cannon');
 ok(charProbe.weaponsAvocado.puddle === 1, 'avocado starts Puddle');
 ok(charProbe.armorAvocado === 1, 'avocado has +1 armor');
 ok(charProbe.weaponsPlunger.spritz === 1, 'plunger starts Gunk Spritz (M7)');
+ok(charProbe.weaponsCheese.mine === 1, 'cheese starts Gunk Mine (M13)');
+ok(charProbe.hpCheese === 125, `cheese has +25 HP (maxHp 125, M13, got ${charProbe.hpCheese})`);
+ok(charProbe.weaponsOnion.bouncy === 1, 'onion starts Bouncy Poop (M13)');
+ok(Math.abs(charProbe.goldOnion - 1.15) < 0.001, `onion has +15% gold (goldMult 1.15, M13, got ${charProbe.goldOnion})`);
 
 // B5: stage 2 — unlock + tile variant + script shift
 const stageProbe = await page.evaluate(() => {
@@ -203,12 +237,27 @@ const stageProbe = await page.evaluate(() => {
   c.clearEnemies();
   for (let i = 0; i < 12; i++) c.spawn(1);
   const kitKinds0 = (c.lastKinds() || []).join(',');
-  return { locked, okr, stage: st.stage, bathKinds0, kitKinds0 };
+  // M13: the COMPOST stage — locked until the Lint King is beaten, and it
+  // shifts the script 120s EARLIER (the endgame: crumb, a 2:00 kitchen kind,
+  // is already active at t=0, which neither kitchen nor bathroom can show).
+  const compostLocked = c.selectStage('compost');
+  c.metaGive('lintking');
+  const compostOk = c.selectStage('compost');
+  c.restart(7);
+  const compostStage = c.state().stage;
+  c.clearEnemies();
+  for (let i = 0; i < 48; i++) c.spawn(1); // 48: crumb is only 0.4 weight — 12 rolls has a real P(zero)
+  const compostKinds0 = (c.lastKinds() || []).join(',');
+  return { locked, okr, stage: st.stage, bathKinds0, kitKinds0, compostLocked, compostOk, compostStage, compostKinds0 };
 });
 ok(stageProbe.locked.err === 'locked: survive5', `bathroom locked until survive5 (${JSON.stringify(stageProbe.locked)})`);
 ok(stageProbe.okr.ok === true && stageProbe.stage === 'bathroom', 'bathroom selectable after unlock, run starts on it');
 ok(stageProbe.bathKinds0.includes('droplet'), `bathroom shifts the script 60s early: droplet active at 0:00 (M7, got ${stageProbe.bathKinds0})`);
 ok(!stageProbe.kitKinds0.includes('droplet'), `kitchen control: no droplet at 0:00 (got ${stageProbe.kitKinds0})`);
+ok(stageProbe.compostLocked.err === 'locked: lintking', `compost locked until the Lint King is beaten (M13, ${JSON.stringify(stageProbe.compostLocked)})`);
+ok(stageProbe.compostOk.ok === true && stageProbe.compostStage === 'compost', 'compost selectable after unlock, run starts on it (M13)');
+ok(stageProbe.compostKinds0.includes('crumb'), `compost shifts the script 120s early: crumb active at 0:00 (M13, got ${stageProbe.compostKinds0})`);
+ok(!stageProbe.kitKinds0.includes('crumb'), `kitchen control: no crumb at 0:00 (M13, got ${stageProbe.kitKinds0})`);
 
 // B6: meta banks gold
 const metaProbe = await page.evaluate(() => {

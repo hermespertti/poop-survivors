@@ -5,7 +5,7 @@
 // Top-down 2D canvas, fixed timestep, seeded determinism, __cap probe.
 // Art: hand-authored pixel arrays over one 16-color palette, 8x8 bitmap font.
 
-import { PALETTE, SPRITES, drawSprite, drawScaled, drawText } from './art';
+import { PALETTE, SPRITES, drawSprite, drawSpriteFlipped, drawScaled, drawText } from './art';
 import { sfx, toggleMute, muted, musicIntensity } from './sfx';
 
 // ---------- deterministic RNG (mulberry32) ----------
@@ -66,6 +66,10 @@ const WEAPONS: Record<string, {
   mine:       { name: 'Gunk Mine',    desc: 'Drops timed mines that blow up',    maxLvl: 8, baseDmg: 26, baseCd: 2.6, dmgPerLvl: 8, cdPerLvl: -0.08, evolved: false, evoWith: 'fuse', evolvesTo: 'minelord' },
   chainfart:  { name: 'Chain Fart',   desc: 'Zap that chains between enemies',   maxLvl: 8, baseDmg: 14, baseCd: 1.1, dmgPerLvl: 5, cdPerLvl: -0.03, evolved: false, evoWith: 'chain', evolvesTo: 'chainstorm' },
   gnat:       { name: 'Gnat',         desc: 'A chomping buddy that zaps for you',maxLvl: 8, baseDmg: 10, baseCd: 0.9, dmgPerLvl: 4, cdPerLvl: -0.04, evolved: false, evoWith: 'winged', evolvesTo: 'supergnat' },
+  // ---------- M13: mechanics beyond shoot/orbit/ring ----------
+  turret:     { name: 'Plop Turret',  desc: 'Drops a stationary turret that fires for you', maxLvl: 8, baseDmg: 14, baseCd: 1.0, dmgPerLvl: 5, cdPerLvl: -0.05, evolved: false, evoWith: 'ammo', evolvesTo: 'autoblast' },
+  boomer:     { name: 'Gunk Boomer',  desc: 'Gunk boomerang: goes out, comes back for a 2nd hit', maxLvl: 8, baseDmg: 16, baseCd: 1.8, dmgPerLvl: 5, cdPerLvl: -0.05, evolved: false, evoWith: 'grip', evolvesTo: 'cyclone' },
+  trail:      { name: 'Slime Trail',  desc: 'Leaves a damaging slime trail where you walk', maxLvl: 8, baseDmg: 6, baseCd: 0.18, dmgPerLvl: 2, cdPerLvl: -0.002, evolved: false, evoWith: 'slush', evolvesTo: 'quagmire' },
   // ---------- evolved weapons (chest-only, evolved: true) ----------
   superfart:   { name: 'SUPER FART',     desc: 'Wide devastating piercing beam', maxLvl: 8, baseDmg: 40, baseCd: 1.1, dmgPerLvl: 6, cdPerLvl: -0.02, evolved: true },
   stickyplop:  { name: 'Sticky Plop',    desc: 'Bigger blob, lingers, re-explodes', maxLvl: 8, baseDmg: 30, baseCd: 2.2, dmgPerLvl: 10, cdPerLvl: -0.08, evolved: true },
@@ -79,6 +83,10 @@ const WEAPONS: Record<string, {
   minelord:    { name: 'MINE LORD',      desc: 'Rains a field of fast-fusing mines', maxLvl: 8, baseDmg: 40, baseCd: 1.8, dmgPerLvl: 12, cdPerLvl: -0.05, evolved: true },
   chainstorm:  { name: 'CHAIN STORM',    desc: 'Lightning storms over the field', maxLvl: 8, baseDmg: 22, baseCd: 0.7, dmgPerLvl: 8, cdPerLvl: -0.02, evolved: true },
   supergnat:   { name: 'SUPER GNAT',     desc: 'A furious swarm that zaps nonstop', maxLvl: 8, baseDmg: 16, baseCd: 0.5, dmgPerLvl: 6, cdPerLvl: -0.02, evolved: true },
+  // ---------- M13 evolutions ----------
+  autoblast:   { name: 'AUTOBLAST',      desc: 'Turret fires a fast 3-way plop spread', maxLvl: 8, baseDmg: 12, baseCd: 0.5, dmgPerLvl: 4, cdPerLvl: -0.02, evolved: true },
+  cyclone:     { name: 'CYCLONE',        desc: '3 gunk boomerangs, each rebounds again', maxLvl: 8, baseDmg: 14, baseCd: 1.4, dmgPerLvl: 4, cdPerLvl: -0.03, evolved: true },
+  quagmire:    { name: 'QUAGMIRE',       desc: 'A wide choking muck that trails and lingers', maxLvl: 8, baseDmg: 10, baseCd: 0.15, dmgPerLvl: 3, cdPerLvl: -0.002, evolved: true },
 };
 const PASSIVES: Record<string, { name: string; desc: string; maxLvl: number }> = {
   meats:      { name: 'Meat Shakes',    desc: '+10% weapon damage / lv', maxLvl: 5 },
@@ -93,7 +101,10 @@ const PASSIVES: Record<string, { name: string; desc: string; maxLvl: number }> =
   goldrush:   { name: 'Gold Rush',      desc: '+15% gold / lv (M7)', maxLvl: 5 },
   fuse:       { name: 'Fuse',           desc: '+20% mine blast radius / lv (M8)', maxLvl: 5 },
   chain:      { name: 'Chain',          desc: '+1 chain hop / lv (M8)', maxLvl: 5 },
-  winged:     { name: 'Winged',         desc: '+1 gnat zap +speed / lv (M8)', maxLvl: 5 },
+  winged:     { name: 'Winged',       desc: '+1 gnat zap +speed / lv (M8)', maxLvl: 5 },
+  ammo:       { name: 'Extra Ammo',   desc: '+1 turret plop / lv (M13)', maxLvl: 3 },
+  grip:       { name: 'Boomer Grip',  desc: 'Boomer +range +1 rebound / lv (M13)', maxLvl: 3 },
+  slush:      { name: 'Slush Pails',  desc: '+20% slime trail width / lv (M13)', maxLvl: 3 },
 };
 
 function wDmg(id: string, lvl: number): number { return (WEAPONS[id].baseDmg + WEAPONS[id].dmgPerLvl * (lvl - 1)) * G.stats.dmgMult; }
@@ -121,21 +132,32 @@ const CHARACTERS: Record<string, {
   plunger:  { name: 'Plunger',  sprite: 'plunger',  startWeapon: 'spritz',
               dmgBonus: 0, speedBonus: 0, armor: 0, hpBonus: 0, goldBonus: 0, magnetBonus: 0.5,
               unlock: 'boss3', unlockDesc: 'kill 3 bosses' },
+  // M13: two more characters. Cheese starts Gunk Mine (its holes are full of
+  // them) and is tanky; Onion starts Bouncy Poop (it bounces off things) and
+  // greases the gold. goldBonus is wired in recomputeStats (M13).
+  cheese:   { name: 'Cheese',   sprite: 'cheese',   startWeapon: 'mine',
+              dmgBonus: 0, speedBonus: 0, armor: 0, hpBonus: 25, goldBonus: 0, magnetBonus: 0,
+              unlock: 'minekill', unlockDesc: 'kill 1000 enemies' },
+  onion:    { name: 'Onion',    sprite: 'onion',    startWeapon: 'bouncy',
+              dmgBonus: 0, speedBonus: 0, armor: 0, hpBonus: 0, goldBonus: 0.15, magnetBonus: 0,
+              unlock: 'goldrun', unlockDesc: 'collect 400 gold in one run' },
 };
 
-// ---------- enemies (M3 roster, M7 extensions) ----------
+// ---------- enemies (M3 roster, M7 extensions, M13 heavy/KB-resistant) ----------
 type Enemy = {
   x: number; z: number; hp: number; maxHp: number; speed: number; dmg: number;
   radius: number; xp: number; kind: string; hitT: number; wob: number;
-  kbx: number; kbz: number; spitCd?: number;
+  kbx: number; kbz: number; spitCd?: number; kbResist?: number;
 };
 // enemy archetype data table (per the GDD director script)
 // bubble: chaser. droplet: fast thin. crumb: tanky slow. mop: swarmer (weak,
 // many). stink: slow heavy cloud. sponge: shielded (takes half damage).
 // splitter (M7): big lump, splits into two mops on death. spitter (M7):
 // ranged — holds its distance band and lobs gunk shots.
+// boulder (M13): heavy armored lump — high HP, shrugs off knockback.
+// shell (M13): spiked shell — medium HP, shrugs off knockback.
 const ENEMY_TYPES: Record<string, {
-  hp: number; speed: number; dmg: number; radius: number; xp: number;
+  hp: number; speed: number; dmg: number; radius: number; xp: number; kbResist?: number;
 }> = {
   bubble:  { hp: 6,  speed: 34, dmg: 8,  radius: 5, xp: 1 },
   droplet: { hp: 4,  speed: 52, dmg: 6,  radius: 4, xp: 1 },
@@ -145,6 +167,9 @@ const ENEMY_TYPES: Record<string, {
   sponge:  { hp: 40, speed: 24, dmg: 10, radius: 5, xp: 4 },
   splitter:{ hp: 26, speed: 22, dmg: 10, radius: 7, xp: 3 },
   spitter: { hp: 18, speed: 18, dmg: 8,  radius: 6, xp: 3 },
+  // M13: kbResist = fraction of knockback ignored (0.7 = shrugs off 70%)
+  boulder: { hp: 80, speed: 15, dmg: 16, radius: 8, xp: 6, kbResist: 0.75 },
+  shell:   { hp: 36, speed: 26, dmg: 12, radius: 7, xp: 4, kbResist: 0.6 },
 };
 // spawn-time HP scaling (VS: enemies get tankier over the run)
 function enemyHp(kind: string): number {
@@ -152,8 +177,10 @@ function enemyHp(kind: string): number {
   return base * (1 + G.time / 90);
 }
 type Gem = { x: number; z: number; val: number; vx: number; vz: number; pulled: boolean };
-type Bullet = { x: number; z: number; vx: number; vz: number; life: number; dmg: number; ang: number; hitR: number; kind: string; bounces?: number; bounceSpeed?: number; linger?: number; hitIds?: number[]; enemy?: boolean; visual?: boolean; blast?: number };
-type Zone = { x: number; z: number; r: number; life: number; tick: number; dmg: number };
+type Bullet = { x: number; z: number; vx: number; vz: number; life: number; dmg: number; ang: number; hitR: number; kind: string; bounces?: number; bounceSpeed?: number; linger?: number; hitIds?: number[]; enemy?: boolean; visual?: boolean; blast?: number; dir?: number; returnHits?: number };
+type Zone = { x: number; z: number; r: number; life: number; tick: number; dmg: number; tint?: string };
+// M13: a dropped Plop Turret — stationary, fires for you on its own cadence.
+type Turret = { x: number; z: number; cd: number; life: number; dmg: number; angle: number; rate: number; spread: number };
 type DmgNum = { x: number; z: number; vy: number; t: number; txt: string; crit: boolean };
 type Mode = 'title' | 'play' | 'levelup' | 'dead' | 'win';
 type WState = { lvl: number; cd: number; ang: number };
@@ -181,9 +208,15 @@ type Game = {
     dmgMult: number; cdMult: number; speedMult: number; xpMult: number;
     projSpeedMult: number; areaMult: number; durationMult: number; maxHp: number;
     goldMult: number;
+    turretCap: number; // M13: max dropped turrets (1 + Extra Ammo levels, capped 3)
+    boomerMult: number; // M13: Gunk Boomer range (1 + Grip levels)
+    trailMult: number; // M13: Slime Trail width (1 + Slush Pails levels)
   };
   spawnCd: number; spawnInterval: number; waveIdx: number; itemIdx: number;
   char: string; stage: string; armor: number;
+  turrets: Turret[]; // M13: dropped Plop Turrets (stationary, fire for you)
+  trailT: number; // M13: Slime Trail drop cadence
+  trailX: number; trailZ: number; // M13: last position the trail was dropped at
 };
 
 // ---------- meta (M4): gold + unlocks persist across runs (localStorage) ----------
@@ -202,11 +235,25 @@ function saveMeta(m: Meta): void {
   try { localStorage.setItem(META_KEY, JSON.stringify(m)); } catch {}
 }
 let META: Meta = loadMeta();
-// stage selection: 'kitchen' (default) or 'bathroom' (unlocked via meta)
-const STAGES: Record<string, { name: string; unlock: string; tileA: string; tileB: string; scriptShift: number }> = {
-  kitchen:  { name: 'The Kitchen',   unlock: 'default', tileA: '#f3e2b8', tileB: '#e8cf94', scriptShift: 0 },
-  bathroom: { name: 'The Bathroom',  unlock: 'survive5', tileA: '#cfe8f6', tileB: '#a5cde6', scriptShift: 60 },
+// stage selection: 'kitchen' (default), 'bathroom' (survive a run),
+// 'compost' (M13: beat the Lint King once — the final stage)
+const STAGES: Record<string, { name: string; unlock: string; tileA: string; tileB: string; accent: string; detail: number; scriptShift: number }> = {
+  kitchen:  { name: 'The Kitchen',   unlock: 'default',  tileA: '#f3e2b8', tileB: '#e8cf94', accent: '#c9a35e', detail: 3,   scriptShift: 0 },
+  bathroom: { name: 'The Bathroom',  unlock: 'survive5', tileA: '#cfe8f6', tileB: '#a5cde6', accent: '#7fb3cf', detail: 1,   scriptShift: 60 },
+  compost:  { name: 'The Compost',   unlock: 'lintking', tileA: '#7a6a3f', tileB: '#655733', accent: '#4a3f24', detail: 2,   scriptShift: 120 },
 };
+// M13: ordered id list — the title selector and tap handler cycle through all
+// of these (pre-M13 it was a 2-way kitchen/bathroom toggle).
+const STAGE_IDS = ['kitchen', 'bathroom', 'compost'];
+function cycleStage(): void {
+  // advance to the next UNLOCKED stage (wrap). Repeats on the same one only
+  // if it's the sole unlocked stage (kitchen-only new save).
+  const cur = STAGE_IDS.indexOf(selectedStage);
+  for (let i = 1; i <= STAGE_IDS.length; i++) {
+    const cand = STAGE_IDS[(cur + i) % STAGE_IDS.length];
+    if (STAGES[cand].unlock === 'default' || META.unlocked.includes(STAGES[cand].unlock)) { selectedStage = cand; return; }
+  }
+}
 let selectedChar = 'crouton';
 let selectedStage = 'kitchen';
 // M11: run-end display state (set in endRun, cleared in startRun) — the
@@ -258,29 +305,38 @@ function mkGame(seed: number): Game {
     flush: null, flushResolved: false, flushed: false, wall: [],
     options: [], flashT: 0, shake: 0, evolutionT: 0, evolved: false,
     kills: 0, bossKilled: 0,
-    stats: { maxLevel: 1, levelUps: 0, gems: 0, nan: 0, shots: {}, kbApplied: 0, chestTaken: 0, itemTaken: 0, dmgMult: 1 + ch.dmgBonus, cdMult: 1, speedMult: 1 + ch.speedBonus, xpMult: 1, projSpeedMult: 1, areaMult: 1, durationMult: 1, goldMult: 1, maxHp: PLAYER.maxHp + ch.hpBonus },
-    spawnCd: 1.0, spawnInterval: 1.1, waveIdx: 0, itemIdx: 0,
+    // M13: base 1.0/100 here — recomputeStats() (called by startRun) is now
+    // the single source of truth for char+passive+shop stats (the pre-M13
+    // baked-bonus convention meant recompute could never see new char bonuses;
+    // the m2 "fresh baseline" pins apply AFTER recompute: crouton 1.1/100).
+    stats: { maxLevel: 1, levelUps: 0, gems: 0, nan: 0, shots: {}, kbApplied: 0, chestTaken: 0, itemTaken: 0, dmgMult: 1, cdMult: 1, speedMult: 1, xpMult: 1, projSpeedMult: 1, areaMult: 1, durationMult: 1, goldMult: 1, maxHp: PLAYER.maxHp, turretCap: 1, boomerMult: 1, trailMult: 1 },
+    spawnCd: 1.0, spawnInterval: 0.85, waveIdx: 0, itemIdx: 0,
     char: selectedChar, stage: selectedStage, armor: ch.armor,
+    turrets: [], trailT: 0, trailX: 0, trailZ: 0,
   };
 }
 
 function recomputeStats(): void {
   const p = (id: string) => G.passives[id] || 0;
   const u = (id: string) => META.upgrades[id] || 0; // M11: gold-shop levels (persist across runs)
-  // M11: shop upgrades multiply into each stat (VS-style meta progression).
-  // The passive terms stay EXACTLY as the m2 assertion suite pins them — with
-  // 0 shop levels every value is byte-identical to the pre-M10 formula. (The
-  // character bonus stays baked in mkGame, as before: crouton's +10% damage is
-  // the pre-pick baseline, recompute owns the in-run terms.)
-  G.stats.dmgMult = (1 + 0.10 * u('dmg')) * (1 + 0.10 * p('meats'));
+  // M13: character bonuses folded in — recomputeStats is the single source of
+  // truth for stats (the pre-M13 convention baked char bonuses in mkGame and
+  // recompute only touched passives, so it could never see new char bonuses).
+  // The m2/m4 pins (crouton: dmg 1.1, rest 1.0) hold because the char terms
+  // are 1.0 for every non-bonus stat and 1.1 dmg for crouton.
+  const ch = CHARACTERS[G.char];
+  G.stats.dmgMult = (1 + 0.10 * u('dmg')) * (1 + 0.10 * p('meats')) * (1 + (ch?.dmgBonus || 0));
   G.stats.cdMult = Math.max(0.3, 1 - 0.08 * p('quick'));
-  G.stats.speedMult = 1 + 0.10 * p('slippers');
+  G.stats.speedMult = 1 + 0.10 * p('slippers') + (ch?.speedBonus || 0);
   G.stats.xpMult = (1 + 0.10 * u('xp')) * (1 + 0.08 * p('tp'));
   G.stats.projSpeedMult = 1 + 0.10 * p('gloves');
   G.stats.areaMult = 1 + 0.10 * p('widestink');
   G.stats.durationMult = 1 + 0.10 * p('sticky');
-  G.stats.goldMult = (1 + 0.10 * u('gold')) * (1 + 0.15 * p('goldrush'));
-  G.stats.maxHp = PLAYER.maxHp + 25 * p('breakfast') + 15 * u('hp');
+  G.stats.goldMult = (1 + 0.10 * u('gold')) * (1 + 0.15 * p('goldrush')) * (1 + (ch?.goldBonus || 0));
+  G.stats.maxHp = PLAYER.maxHp + (ch?.hpBonus || 0) + 25 * p('breakfast') + 15 * u('hp');
+  G.stats.turretCap = 1 + Math.min(2, p('ammo')); // M13: Extra Ammo → more dropped turrets
+  G.stats.boomerMult = 1 + 0.10 * p('grip');      // M13: Grip → boomerang range
+  G.stats.trailMult = 1 + 0.20 * p('slush');      // M13: Slush Pails → slime width
   if (G.player.hp > G.stats.maxHp) G.player.hp = G.stats.maxHp;
 }
 
@@ -331,6 +387,21 @@ function stickMove(e: PointerEvent): void {
   if (len > STICK_R) { dx = dx * STICK_R / len; dz = dz * STICK_R / len; }
   stick.x = dx / STICK_R; stick.z = dz / STICK_R;
 }
+// M13 fullscreen: a phone run should own the whole screen (the pre-M13
+// letterbox left dead browser chrome around the play area). Fullscreen API
+// with the iOS/Safari webkit prefix fallback; must be called from a user
+// gesture (button tap / key press), which both paths are.
+function toggleFullscreen(): void {
+  const el = document.documentElement as HTMLElement & { webkitRequestFullscreen?: () => void; webkitExitFullscreen?: () => void };
+  const doc = document as Document & { webkitFullscreenElement?: Element; webkitExitFullscreen?: () => void };
+  const isFs = !!(document.fullscreenElement || doc.webkitFullscreenElement);
+  try {
+    if (isFs) { if (document.exitFullscreen) document.exitFullscreen(); else if (doc.webkitExitFullscreen) doc.webkitExitFullscreen(); }
+    else if (el.requestFullscreen) el.requestFullscreen();
+    else if (el.webkitRequestFullscreen) el.webkitRequestFullscreen();
+  } catch { /* fullscreen denied (no gesture / unsupported) — keep the letterbox */ }
+}
+document.addEventListener('fullscreenchange', fitCanvas);
 canvasEl.addEventListener('pointerdown', (e: PointerEvent) => {
   const v = clientToView(e.clientX, e.clientY);
   // M11 mobile: pause / mute buttons, top-center under the timer (the only
@@ -339,6 +410,7 @@ canvasEl.addEventListener('pointerdown', (e: PointerEvent) => {
   if (COARSE && G.mode === 'play' && v.z >= 12 && v.z < 28) {
     if (v.x >= 136 && v.x < 156) { paused = !paused; sfx('pop'); e.preventDefault(); return; }
     if (v.x >= 160 && v.x < 180) { const on = toggleMute(); G.flashT = 0.2; muteMsgT = on ? 0 : 1.4; e.preventDefault(); return; }
+    if (v.x >= 184 && v.x < 204) { toggleFullscreen(); sfx('pop'); e.preventDefault(); return; } // M13
   }
   // M11 mobile: the title-screen shop rows are tap targets — a tap on a row
   // buys that upgrade, anywhere else on the title starts the run. The CH /
@@ -362,8 +434,7 @@ canvasEl.addEventListener('pointerdown', (e: PointerEvent) => {
       sfx('pop'); e.preventDefault(); return;
     }
     if (v.z >= 162 && v.z < 173 && v.x > 112) {
-      const next = selectedStage === 'kitchen' ? 'bathroom' : 'kitchen';
-      if (STAGES[next].unlock === 'default' || META.unlocked.includes(STAGES[next].unlock)) { selectedStage = next; sfx('pop'); }
+      cycleStage(); sfx('pop'); // M13: 3-stage cycle (kitchen→bathroom→compost)
       e.preventDefault(); return;
     }
   }
@@ -613,10 +684,12 @@ function damageEnemy(e: Enemy, dmg: number, srcX: number, srcZ: number): void {
   e.hp -= dmg; e.hitT = 0.12;
   if (e.hitT >= 0.12) sfx('hit'); // only on fresh contact (not every re-hit)
   G.dmgNums.push({ x: e.x, z: e.z - 6, vy: -22, t: 0.7, txt: String(Math.round(dmg)), crit: false });
-  // knockback, away from the hit source (VS-style; boss resists)
+  // knockback, away from the hit source (VS-style; boss resists). M13: heavy
+  // enemies (boulder/shell) ignore a share of knockback — they don't flinch.
   const dx = e.x - srcX, dz = e.z - srcZ;
   const d = Math.hypot(dx, dz) || 1;
-  e.kbx += (dx / d) * 70; e.kbz += (dz / d) * 70;
+  const kb = 70 * (1 - (ENEMY_TYPES[e.kind].kbResist || 0));
+  e.kbx += (dx / d) * kb; e.kbz += (dz / d) * kb;
   G.stats.kbApplied++;
   if (e.hp <= 0) {
     G.kills++;
@@ -648,6 +721,11 @@ function fireWeapons(): void {
       w.ang += spd * DT;
       const r = 34 + 2 * w.lvl;
       const band = 13; // ring thickness (VS aura)
+      // M13: the shards ARE the ring now — N cracker chunks at even angles
+      // around the band (N grows with level, 4 → 8), derived at render from
+      // w.ang (the same spin the damage band rides). Pre-M13 it was ONE shard
+      // marker + a 30%-alpha circle, so the visual (a dot) didn't match the
+      // mechanic (a full ring) — human feedback: "no indicator it even works".
       orbitPos = { x: p.x + Math.cos(w.ang) * r, z: p.z + Math.sin(w.ang) * r, r: r + 6 };
       if (w.cd <= 0) {
         w.cd = wCd('crackerring', w.lvl);
@@ -744,6 +822,63 @@ function fireWeapons(): void {
           damageEnemy(t, wDmg(id, w.lvl), gnatPos.x, gnatPos.z);
         }
         sfx('shoot');
+      }
+      continue;
+    }
+    if (id === 'turret' || id === 'autoblast') {
+      // M13 Plop Turret: drop a STATIONARY turret at your feet; it targets and
+      // fires on its own cadence — you can walk away and it keeps punching.
+      // Levels: +dmg, +lifetime, +rate. AUTOBLAST: faster + a 3-way spread.
+      // Extra Ammo passive: +1 plop per level (max 3 turrets on the field).
+      if (w.cd <= 0 && G.turrets.length < G.stats.turretCap) {
+        w.cd = wCd(id, w.lvl);
+        G.stats.shots[id] = (G.stats.shots[id] || 0) + 1;
+        const tx = Math.max(10, Math.min(WORLD_W - 10, p.x + (G.rng() - 0.5) * 26));
+        const tz = Math.max(10, Math.min(WORLD_H - 10, p.z + (G.rng() - 0.5) * 26));
+        const spread = id === 'autoblast' ? 3 : 1;
+        G.turrets.push({ x: tx, z: tz, cd: 0, life: (id === 'autoblast' ? 8 : 6) + w.lvl * 1.5, dmg: wDmg(id, w.lvl), angle: G.rng() * 6.28, rate: Math.max(0.35, (id === 'autoblast' ? 0.5 : 0.9) - 0.05 * w.lvl), spread });
+        sfx('shoot');
+      }
+      continue;
+    }
+    if (id === 'boomer' || id === 'cyclone') {
+      // M13 Gunk Boomer: a boomerang that goes out AND comes back — hits on
+      // the way out, again on the way home. Grip passive: +range, +1 rebound.
+      // CYCLONE: three boomerangs per throw, each rebounds once more.
+      if (w.cd <= 0) {
+        w.cd = wCd(id, w.lvl);
+        G.stats.shots[id] = (G.stats.shots[id] || 0) + 1;
+        const count = id === 'cyclone' ? 3 : 1;
+        const range = wArea(110 + 12 * w.lvl) * G.stats.boomerMult;
+        const rebounds = (id === 'cyclone' ? 2 : 1) + (G.passives.grip || 0);
+        for (let k = 0; k < count; k++) {
+          const a = p.face + (k - (count - 1) / 2) * 0.35;
+          const spd = wProjSpeed(160);
+          G.bullets.push({ x: p.x, z: p.z, vx: Math.cos(a) * spd, vz: Math.sin(a) * spd, life: wDuration(2.4), dmg: wDmg(id, w.lvl), ang: a, hitR: wArea(4), kind: 'boomer', bounces: range / spd, bounceSpeed: spd, dir: 1, returnHits: rebounds });
+        }
+        sfx('shoot');
+      }
+      continue;
+    }
+    if (id === 'trail' || id === 'quagmire') {
+      // M13 Slime Trail: a damaging muck drops BEHIND you as you move (like
+      // VS' Vito trail). The weapon cd gates each drop; Slush Pails widens the
+      // slick, Sticky lengthens it. QUAGMIRE: wider, longer, more frequent.
+      if (w.cd <= 0) {
+        w.cd = wCd(id, w.lvl);
+        // moving? (walked since the last drop) — the trail follows your feet,
+        // it doesn't pour at you while you stand still
+        const dxm = p.x - G.trailX, dzm = p.z - G.trailZ;
+        const moved = G.trailT === 0 || Math.hypot(dxm, dzm) > 4;
+        if (!moved) continue;
+        G.stats.shots[id] = (G.stats.shots[id] || 0) + 1;
+        const r = (id === 'quagmire' ? 15 : 10) * wArea(1) * G.stats.trailMult;
+        // drop slightly BEHIND the player along their last movement so the
+        // blobs string out into a trail.
+        const mdd = Math.hypot(dxm, dzm) || 1;
+        const bx = p.x - (dxm / mdd) * 6, bz = p.z - (dzm / mdd) * 6;
+        G.zones.push({ x: bx, z: bz, r, life: wDuration(id === 'quagmire' ? 2.4 : 1.2), tick: 0.35, dmg: wDmg(id, w.lvl), tint: '#3fa34d' });
+        G.trailX = p.x; G.trailZ = p.z; G.trailT = G.time;
       }
       continue;
     }
@@ -973,6 +1108,9 @@ const SCRIPT: Array<{ t: number; kind: string; weight: number }> = [
   { t: 1020,  kind: 'sponge',  weight: 0.3 },
   { t: 1320,  kind: 'splitter', weight: 0.4 }, // M7: 22:00
   { t: 1620,  kind: 'spitter',  weight: 0.4 }, // M7: 27:00
+  // M13: the heavy/KB-resistant join the late gauntlet
+  { t: 1140,  kind: 'shell',    weight: 0.35 }, // 19:00
+  { t: 1500,  kind: 'boulder',  weight: 0.3 },  // 25:00
 ];
 // density spikes (30s of extra spawns): first at 12:00, repeats every 2 min
 const SPIKE_T = 720; // 12:00
@@ -1007,7 +1145,7 @@ function spawnEnemy(kind: string): void {
   z = Math.max(8, Math.min(WORLD_H - 8, z));
   const t = ENEMY_TYPES[kind];
   const hp = enemyHp(kind);
-  G.enemies.push({ x, z, hp, maxHp: hp, speed: t.speed, dmg: t.dmg, radius: t.radius, xp: t.xp, kind, hitT: 0, wob: G.rng() * 6.28, kbx: 0, kbz: 0 });
+  G.enemies.push({ x, z, hp, maxHp: hp, speed: t.speed, dmg: t.dmg, radius: t.radius, xp: t.xp, kind, hitT: 0, wob: G.rng() * 6.28, kbx: 0, kbz: 0, kbResist: t.kbResist });
 }
 // wave burst: ring of N enemies around the player (the "swarm burst")
 function spawnWave(n: number, kind?: string): void {
@@ -1019,7 +1157,7 @@ function spawnWave(n: number, kind?: string): void {
     const z = Math.max(8, Math.min(WORLD_H - 8, G.player.z + Math.sin(ang) * dist));
     const t = ENEMY_TYPES[k];
     const hp = enemyHp(k);
-    G.enemies.push({ x, z, hp, maxHp: hp, speed: t.speed, dmg: t.dmg, radius: t.radius, xp: t.xp, kind: k, hitT: 0, wob: G.rng() * 6.28, kbx: 0, kbz: 0 });
+    G.enemies.push({ x, z, hp, maxHp: hp, speed: t.speed, dmg: t.dmg, radius: t.radius, xp: t.xp, kind: k, hitT: 0, wob: G.rng() * 6.28, kbx: 0, kbz: 0, kbResist: t.kbResist });
   }
 }
 // THE SPASM WALL (15:00, with The Constipation): a slow ring of tanky crumb
@@ -1079,21 +1217,22 @@ function update(): void {
   // pause: P — play mode only (the soak harnesses run with __cap.step, which
   // bypasses this gate, so pause never touches determinism tests)
   if (justPressed('p') && G.mode === 'play') paused = !paused;
+  // M13 fullscreen: F — works from title and play (a user gesture, as the
+  // Fullscreen API requires)
+  if (justPressed('f') && (G.mode === 'play' || G.mode === 'title')) toggleFullscreen();
   if (G.mode === 'levelup') {
     const idx = keyIndex('1', '2', '3', '4');
     if (idx >= 0) pickOption(idx);
   } else if (G.mode === 'title') {
-    // character select (1/2/3/4) + stage toggle (S) + start (SPACE)
-    const chIdx = keyIndex('1', '2', '3', '4');
+    // character select (1-6, M13: two more chars) + stage toggle (S) + start (SPACE)
+    const chIdx = keyIndex('1', '2', '3', '4', '5', '6');
     if (chIdx >= 0) {
       const id = Object.keys(CHARACTERS)[chIdx];
       const ch = CHARACTERS[id];
       if (ch.unlock === 'default' || META.unlocked.includes(ch.unlock)) selectedChar = id;
     }
     if (justPressed('s')) {
-      // toggle stage if unlocked
-      const next = selectedStage === 'kitchen' ? 'bathroom' : 'kitchen';
-      if (STAGES[next].unlock === 'default' || META.unlocked.includes(STAGES[next].unlock)) selectedStage = next;
+      cycleStage(); // M13: 3-stage cycle (keyboard mirrors the tap)
     }
     // M11: shop buys on the keyboard (QWER mirror the title rows)
     const upIdx = keyIndex('q', 'w', 'e', 'r');
@@ -1135,6 +1274,13 @@ function update(): void {
   for (let i = G.bullets.length - 1; i >= 0; i--) {
     const b = G.bullets[i];
     b.x += b.vx * DT; b.z += b.vz * DT; b.life -= DT;
+    // M13 Gunk Boomer: the outbound countdown (bounces = seconds) runs out →
+    // flip and come home. The return is a FRESH strike (pierce set reset), so
+    // it hits again on the way back, as the weapon promises.
+    if (b.kind === 'boomer' && b.dir === 1) {
+      if (b.bounces) b.bounces -= DT;
+      if ((b.bounces || 0) <= 0) { b.vx = -b.vx; b.vz = -b.vz; b.dir = -1; b.hitIds = []; }
+    }
     if (b.life <= 0) {
       // mine (M8): fuse ran out — detonate a one-shot blast zone, then vanish
       if (b.kind === 'mine') {
@@ -1226,6 +1372,32 @@ function update(): void {
       }
       if (G.boss && Math.hypot(G.boss.x - zn.x, G.boss.z - zn.z) < zn.r + G.boss.radius) hitBoss(zn.dmg, zn.x, zn.z);
       if (G.flush && Math.hypot(G.flush.x - zn.x, G.flush.z - zn.z) < zn.r + G.flush.radius) hitFlush(zn.dmg, zn.x, zn.z);
+    }
+  }
+
+  // M13 Plop Turrets: stationary, each acquires the nearest enemy within 220u
+  // and fires plops on its own rate. They expire (life) — dropped turrets are
+  // a tempo weapon, not a permanent base (VS: your drops have a window).
+  for (let i = G.turrets.length - 1; i >= 0; i--) {
+    const tu = G.turrets[i];
+    tu.life -= DT;
+    if (tu.life <= 0) { G.turrets.splice(i, 1); continue; }
+    tu.cd -= DT;
+    if (tu.cd > 0) continue;
+    let t: Enemy | null = null, bd = 220;
+    for (const e of G.enemies) {
+      if (e.hp <= 0) continue;
+      const d = Math.hypot(e.x - tu.x, e.z - tu.z);
+      if (d < bd) { bd = d; t = e; }
+    }
+    if (!t) { tu.cd = 0.1; continue; }
+    tu.cd = tu.rate;
+    const a = Math.atan2(t.z - tu.z, t.x - tu.x);
+    tu.angle = a;
+    const spd = wProjSpeed(200);
+    for (let k = 0; k < tu.spread; k++) {
+      const aa = a + (k - (tu.spread - 1) / 2) * 0.2;
+      G.bullets.push({ x: tu.x, z: tu.z, vx: Math.cos(aa) * spd, vz: Math.sin(aa) * spd, life: 1.2, dmg: tu.dmg, ang: aa, hitR: wArea(3), kind: 'plop' });
     }
   }
 
@@ -1398,8 +1570,12 @@ function update(): void {
   }
 
   // spawn director (M3): script density + wave bursts + spikes
+  // M13 density pass (human feedback: "way more enemies, bigger waves"): the
+  // ambient interval falls faster and floors lower (1.1/0.25 → 0.85/0.18),
+  // wave bursts grow faster and hit a 45 cap, field cap 260 → 380. The
+  // balance gate's analytic spawnRate (test/balance.mjs) mirrors the ambient.
   G.spawnCd -= DT;
-  G.spawnInterval = Math.max(0.25, 1.1 - G.time / 300);
+  G.spawnInterval = Math.max(0.18, 0.85 - G.time / 260);
   if (G.spawnCd <= 0) { spawnEnemy(pickKind()); G.spawnCd = G.spawnInterval; }
   // music intensity follows the pressure curve (density → louder/heavier)
   musicIntensity(Math.min(1.6, 0.4 + G.enemies.length / 120 + (G.boss ? 0.4 : 0)));
@@ -1413,13 +1589,13 @@ function update(): void {
   const waveNext = Math.floor((G.time - 60) / 120) + 1;
   if (G.time >= 60 && G.time < 1620 && G.waveIdx < waveNext) {
     G.waveIdx = waveNext;
-    const size = 8 + Math.floor(G.time / 60) * 2;
-    spawnWave(Math.min(30, size));
+    const size = 12 + Math.floor(G.time / 60) * 3; // M13: 8+2/min → 12+3/min
+    spawnWave(Math.min(45, size)); // M13: cap 30 → 45
   }
   // density spike: 30s of doubled spawn rate (first at 12:00, every 2 min after)
   const spikeActive = G.time >= SPIKE_T && ((G.time - SPIKE_T) % SPIKE_EVERY) < 30;
-  if (spikeActive && G.spawnCd > 0.25) { G.spawnCd = 0.25; }
-  if (G.enemies.length > 260) G.enemies.splice(0, G.enemies.length - 260);
+  if (spikeActive && G.spawnCd > 0.18) { G.spawnCd = 0.18; } // M13: floor 0.25 → 0.18
+  if (G.enemies.length > 380) G.enemies.splice(0, G.enemies.length - 380); // M13: cap 260 → 380
   // stage items: absolute schedule — 2:30, then every 2.5 min
   const itemNext = Math.floor((G.time - 150) / 150) + 1; // index of next item slot
   if (G.time >= 150 && G.itemIdx < itemNext) { G.itemIdx = itemNext; spawnItem(); }
@@ -1463,26 +1639,16 @@ function endRun(won: boolean, flushed: boolean): void {
   if (G.time >= 600) unlocks.push('survive10'); // Hot Dog
   if (G.kills >= 500) unlocks.push('kills500'); // Avocado
   if (G.bossKilled >= 3) unlocks.push('boss3'); // M7: Plunger
+  if (G.bossKilled >= 5) unlocks.push('lintking'); // M13: The Compost stage (beat the Lint King)
+  if (G.kills >= 1000) unlocks.push('minekill'); // M13: Cheese
+  if (G.gold >= 400) unlocks.push('goldrun'); // M13: Onion (400 gold in one run)
   lastUnlocks = [];
   for (const u of unlocks) if (!META.unlocked.includes(u)) { META.unlocked.push(u); lastUnlocks.push(u); }
   if (lastUnlocks.length > 0 || G.gold > 0) saveMeta(META);
 }
 
 function clampNum(v: number): number { if (Number.isNaN(v)) { G.stats.nan++; return 0; } return v; }
-function startRun(seed: number): void { G = mkGame(seed); G.mode = 'play'; botDir = { x: 0, y: 0 }; orbitPos = null; orbit2Pos = null; gnatPos = null; lastEvo = null; paused = false; lastUnlocks = []; newBestTime = false; applyUpgrades(); }
-// M11: shop upgrades multiply onto the mkGame-baked stats (which carry the
-// character bonus). Deliberately NOT recomputeStats() — that recomputes from
-// passives only and would drop the baked char bonus on a fresh run (the m2
-// "fresh baseline dmg 1.1" assertion pins the convention). Mid-run passive
-// picks call recomputeStats(), which re-applies the same shop factors, so the
-// buffs persist through the run either way.
-function applyUpgrades(): void {
-  const u = (id: string) => META.upgrades[id] || 0;
-  G.stats.dmgMult *= 1 + 0.10 * u('dmg');
-  G.stats.xpMult *= 1 + 0.10 * u('xp');
-  G.stats.goldMult *= 1 + 0.10 * u('gold');
-  G.stats.maxHp += 15 * u('hp');
-}
+function startRun(seed: number): void { G = mkGame(seed); G.mode = 'play'; botDir = { x: 0, y: 0 }; orbitPos = null; orbit2Pos = null; gnatPos = null; lastEvo = null; paused = false; lastUnlocks = []; newBestTime = false; recomputeStats(); }
 // ---------- rendering ----------
 const canvas = (document.getElementById('c') as HTMLCanvasElement);
 const ctx = canvas.getContext('2d')!;
@@ -1519,6 +1685,8 @@ const ENEMY_SPR: Record<string, { spr: string; hit: string }> = {
   sponge: { spr: 'sponge', hit: 'spongeHit' },
   splitter: { spr: 'splitter', hit: 'splitterHit' }, // M7
   spitter: { spr: 'spitter', hit: 'spitterHit' }, // M7
+  boulder: { spr: 'boulder', hit: 'boulderHit' }, // M13
+  shell: { spr: 'shell', hit: 'shellHit' }, // M13
 };
 function enemySprite(kind: string, hit: boolean): any {
   const e = ENEMY_SPR[kind] || ENEMY_SPR.bubble;
@@ -1543,11 +1711,19 @@ function render(t: number): void {
   const sy = G.shake > 0 ? Math.cos(t * 39) * G.shake * 0.5 : 0;
   const cx = camX() + sx, cy = camY() + sy;
   drawFloor(cx, cy);
-  // zones under everything
+  // zones under everything (M13: tint lets the slime trail read as green muck)
   for (const zn of G.zones) {
-    ctx.fillStyle = 'rgba(138,90,43,0.45)';
+    ctx.fillStyle = zn.tint ? zn.tint + '73' : 'rgba(138,90,43,0.45)';
     ctx.beginPath(); ctx.arc(zn.x - cx, zn.z - cy, zn.r, 0, 6.283); ctx.fill();
-    ctx.strokeStyle = 'rgba(74,50,32,0.6)'; ctx.stroke();
+    ctx.strokeStyle = zn.tint ? zn.tint + '99' : 'rgba(74,50,32,0.6)'; ctx.stroke();
+  }
+  // M13 Plop Turrets (drawn over zones, under the player)
+  for (const tu of G.turrets) {
+    const tx = Math.round(tu.x - cx), tz = Math.round(tu.z - cy);
+    drawSprite(ctx, SPRITES.turret, tx - 4, tz - 4, Math.floor(t * 4) % 2);
+    // barrel toward the last aim so you can read what it's tracking
+    ctx.fillStyle = 'rgba(200,220,255,0.7)';
+    ctx.fillRect(tx + Math.round(Math.cos(tu.angle) * 6) - 1, tz + Math.round(Math.sin(tu.angle) * 6) - 1, 2, 2);
   }
   for (const g of G.gems) drawSprite(ctx, SPRITES.gem, Math.round(g.x - cx), Math.round(g.z - cy), Math.floor(t / 0.3) % 2);
   for (const it of G.items) {
@@ -1590,21 +1766,37 @@ function render(t: number): void {
     const blink = p.invuln > 0 && Math.floor(t * 16) % 2 === 0;
     const chSpr = SPRITES[CHARACTERS[G.char]?.sprite || 'crouton'];
     const chHit = SPRITES[(CHARACTERS[G.char]?.sprite || 'crouton') + 'Hit'];
-    drawSprite(ctx, blink && chHit ? chHit : chSpr, Math.round(p.x - cx), Math.round(p.z - cy), frame);
+    // M13 facing animation: the sprite mirrors to face whatever way p.face
+    // points (nearest enemy / last movement). The chars now have off-center
+    // eyes, so left vs right reads as a real turn.
+    const spr = blink && chHit ? chHit : chSpr;
+    if (Math.cos(p.face) < 0) drawSpriteFlipped(ctx, spr, Math.round(p.x - cx), Math.round(p.z - cy), frame);
+    else drawSprite(ctx, spr, Math.round(p.x - cx), Math.round(p.z - cy), frame);
   }
-  // orbiting cracker: faint full aura ring centered on the PLAYER + the shard marker
+  // orbiting cracker ring (M13): N orbiting shards + a visible damage band.
+  // The band is the actual damage zone (|d - r| < band), so it's drawn as a
+  // semi-transparent annulus the exact width of the damage — the pre-M13
+  // 1-dot + faint circle didn't read as "this whole ring hurts".
   if (orbitPos) {
     const p = G.player;
     const cr = G.weapons.crackerring;
     if (cr) {
-      const ar = (34 + 2 * cr.lvl) * G.stats.areaMult;
-      ctx.strokeStyle = 'rgba(255,224,130,0.3)';
-      ctx.lineWidth = 2;
+      const r = 34 + 2 * cr.lvl;
+      const band = 13;
+      const cxp = Math.round(p.x - cx), cyp = Math.round(p.z - cy);
+      // damage annulus (the real hitbox), gold-tinted
+      ctx.fillStyle = 'rgba(255,224,130,0.14)';
       ctx.beginPath();
-      ctx.arc(Math.round(p.x - cx), Math.round(p.z - cy), ar, 0, Math.PI * 2);
-      ctx.stroke();
+      ctx.arc(cxp, cyp, r + band, 0, Math.PI * 2);
+      ctx.arc(cxp, cyp, Math.max(0, r - band), 0, Math.PI * 2, true);
+      ctx.fill();
+      // the shard count is derived from level, same as the fire loop
+      const N = Math.min(8, 3 + Math.ceil(cr.lvl / 2));
+      for (let s = 0; s < N; s++) {
+        const a = cr.ang + (s / N) * Math.PI * 2;
+        drawSprite(ctx, SPRITES.cracker, Math.round(p.x + Math.cos(a) * r - cx) - 4, Math.round(p.z + Math.sin(a) * r - cy) - 4, Math.floor(t * 12) % 2);
+      }
     }
-    drawSprite(ctx, SPRITES.cracker, Math.round(orbitPos.x - cx) - 4, Math.round(orbitPos.z - cy) - 4, Math.floor(t * 12) % 2);
   }
   // orbiting turd (counter-rotation)
   if (orbit2Pos) {
@@ -1646,6 +1838,32 @@ function drawFloor(cx: number, cy: number): void {
       ctx.fillRect(tx * TILE - cx, ty * TILE - cy, TILE, TILE);
     }
   }
+  // M13: per-stage floor detail so each stage reads as a distinct place
+  // (pre-M13 it was a flat 2-tone checker everywhere — "the background could
+  // be worked to be more interesting"). Deterministic per tile (hash), so it
+  // doesn't shimmer as the camera scrolls. detail: 0 kitchen crumbs, 1
+  // bathroom water/soap specks, 2 compost organic mottling.
+  if (st.detail > 0) {
+    ctx.fillStyle = st.accent;
+    for (let ty = y0; ty < y0 + VIEW_H / TILE + 1; ty++) {
+      for (let tx = x0; tx < x0 + VIEW_W / TILE + 1; tx++) {
+        // cheap integer hash → 0..250; only some tiles carry a speck
+        const h = Math.abs((tx * 7349 + ty * 9151 + 11) % 251);
+        if (st.detail === 1) {
+          // bathroom: sparse water/soap dots
+          if (h % 13 === 0) ctx.fillRect(tx * TILE - cx + (h % 16) + 1, ty * TILE - cy + ((h >> 3) % 16) + 1, 1, 1);
+        } else if (st.detail === 2) {
+          // compost: organic mottling — darker patches + leaf flecks
+          if (h % 9 === 0) ctx.fillRect(tx * TILE - cx + (h % 14), ty * TILE - cy + ((h >> 2) % 14), 2, 1);
+          if (h % 17 === 0) ctx.fillRect(tx * TILE - cx + ((h >> 1) % 16), ty * TILE - cy + ((h >> 4) % 16), 1, 1);
+        } else {
+          // kitchen (M13): sparse crumbs + a few flour streaks
+          if (h % 15 === 0) ctx.fillRect(tx * TILE - cx + (h % 15) + 1, ty * TILE - cy + ((h >> 2) % 15) + 1, 1, 1);
+          if (h % 29 === 0) ctx.fillRect(tx * TILE - cx + (h % 10), ty * TILE - cy + ((h >> 3) % 10), 3, 1);
+        }
+      }
+    }
+  }
 }
 
 function center(text: string, y: number, style: number, scale = 1): void {
@@ -1681,6 +1899,9 @@ function drawHud(t: number): void {
     gloves: 'bolt', widestink: 'cracker', sticky: 'plop', lucky: 'gem',
     goldrush: 'goldbag', // M7
     fuse: 'mine', chain: 'chainfart', winged: 'gnat', // M8
+    turret: 'turret', boomer: 'boomer', trail: 'trail', // M13 base
+    autoblast: 'turret', cyclone: 'boomer', quagmire: 'trail', // M13 evos
+    ammo: 'turret', grip: 'boomer', slush: 'trail', // M13 passives
   };
   let ax = 6;
   for (const id of Object.keys(G.weapons)) {
@@ -1717,6 +1938,25 @@ function drawHud(t: number): void {
     ctx.fillStyle = '#f3e2b8'; ctx.fillRect(160, 12, 18, 14);
     drawText(ctx, 'M', 163, 14, 0);
     if (muted()) { ctx.fillStyle = '#4a3220'; ctx.fillRect(160, 18, 18, 2); }
+    // M13 fullscreen: 4-corner bracket icon — outward brackets = "enter",
+    // a smaller inset set = "exit" (you're already in). F key on desktop.
+    const fsOn = !!(document.fullscreenElement);
+    ctx.fillStyle = '#3a2b1a'; ctx.fillRect(183, 11, 20, 16);
+    ctx.fillStyle = '#f3e2b8'; ctx.fillRect(184, 12, 18, 14);
+    ctx.fillStyle = '#4a3220';
+    if (fsOn) {
+      // inset (exit): x 190-196, y 17-20
+      ctx.fillRect(190, 17, 1, 3); ctx.fillRect(190, 17, 3, 1);
+      ctx.fillRect(196, 17, 1, 3); ctx.fillRect(194, 17, 3, 1);
+      ctx.fillRect(190, 20, 1, 3); ctx.fillRect(190, 20, 3, 1);
+      ctx.fillRect(196, 20, 1, 3); ctx.fillRect(194, 20, 3, 1);
+    } else {
+      // outward (enter): x 187-199, y 14-23
+      ctx.fillRect(187, 14, 1, 4); ctx.fillRect(187, 14, 4, 1);
+      ctx.fillRect(199, 14, 1, 4); ctx.fillRect(196, 14, 4, 1);
+      ctx.fillRect(187, 23, 1, 4); ctx.fillRect(187, 23, 4, 1);
+      ctx.fillRect(199, 20, 1, 4); ctx.fillRect(196, 23, 4, 1);
+    }
   }
   // boss bar (per-boss name)
   if (G.boss) {
@@ -1761,6 +2001,8 @@ function overlay(title: string, sub1: string, sub2: string, t: number, dark: boo
 // silent unlock in the localStorage.
 const UNLOCK_LABEL: Record<string, string> = {
   survive5: 'THE BATHROOM', survive10: 'HOT DOG', kills500: 'AVOCADO', boss3: 'PLUNGER',
+  minekill: 'CHEESE', goldrun: 'ONION', // M13
+  compost: 'THE COMPOST', // M13
 };
 function drawEndScreen(t: number, won: boolean, flushed: boolean): void {
   ctx.fillStyle = won ? 'rgba(30,22,10,0.72)' : 'rgba(20,10,6,0.84)';
@@ -1797,6 +2039,9 @@ function drawLevelUp(): void {
     gloves: 'bolt', widestink: 'cracker', sticky: 'plop', lucky: 'gem',
     goldrush: 'goldbag', // M7
     fuse: 'mine', chain: 'chainfart', winged: 'gnat', // M8
+    turret: 'turret', boomer: 'boomer', trail: 'trail', // M13 base
+    autoblast: 'turret', cyclone: 'boomer', quagmire: 'trail', // M13 evos
+    ammo: 'turret', grip: 'boomer', slush: 'trail', // M13 passives
   };
   G.options.forEach((o, i) => {
     const y = 36 + i * 44;
@@ -1861,13 +2106,12 @@ function drawTitle(t: number): void {
   ctx.fillRect(10, 148, VIEW_W - 20, 1);
   ctx.fillRect(10, 229, VIEW_W - 20, 1);
   center('CH: ' + line.trim(), 152, 0);
-  // stage select: S (tap the right half on a phone)
-  const stageLine = STAGES.kitchen.unlock === 'default' || META.unlocked.includes(STAGES.kitchen.unlock) ? 'K' : '?';
-  const bathLine = META.unlocked.includes(STAGES.bathroom.unlock) ? 'B' : '?';
-  center('STAGE: ' + (selectedStage === 'kitchen' ? 'KITCHEN' : 'BATHROOM') + `  [S] (${stageLine}${bathLine})`, 164, 0);
+  // stage select: S (tap the right half on a phone) — M13: three stages
+  const stgChar = (id: string) => (STAGES[id].unlock === 'default' || META.unlocked.includes(STAGES[id].unlock)) ? id[0].toUpperCase() : '?';
+  center('STAGE: ' + STAGES[selectedStage].name.toUpperCase() + `  [S] (${stgChar('kitchen')}${stgChar('bathroom')}${stgChar('compost')})`, 164, 0);
   // M11 gold shop (VS-style meta): banked gold finally spends. Keyboard Q/W/E/R
   // buys a row; on a phone, TAP the row. Rows match shopRowY() for hit-testing.
-  center(COARSE ? 'UPGRADES: TAP A ROW' : 'UPGRADES QWER  P PAUSE  M MUTE', 176, 2);
+  center(COARSE ? 'UPGRADES: TAP A ROW' : 'UPGRADES QWER  P PAUSE  M MUTE  F FS', 176, 2);
   const SHOPKEYS = ['Q', 'W', 'E', 'R'];
   const SHOPBRIEF: Record<string, string> = { hp: '+15HP', dmg: '+10%DMG', xp: '+10%XP', gold: '+10%GOLD' };
   UPGRADES.forEach((up, i) => {
@@ -1944,6 +2188,7 @@ const win = window;
       speedMult: +G.stats.speedMult.toFixed(3), xpMult: +G.stats.xpMult.toFixed(3),
       projSpeedMult: +G.stats.projSpeedMult.toFixed(3), areaMult: +G.stats.areaMult.toFixed(3),
       durationMult: +G.stats.durationMult.toFixed(3), goldMult: +G.stats.goldMult.toFixed(3), maxHp: G.stats.maxHp,
+      turretCap: G.stats.turretCap, boomerMult: +G.stats.boomerMult.toFixed(3), trailMult: +G.stats.trailMult.toFixed(3), // M13
     },
   }),
   xpCurve: (lvl: number) => xpToNext(lvl),

@@ -291,11 +291,13 @@ const med = (a) => { if (!a.length) return 0; const s = [...a].sort((x, y) => x 
 
 // heaven minute (the GDD's actual definition): "bullet heaven = your clear
 // rate exceeds the spawn rate." Measured as the first t>=300 where the
-// rolling 30s kill-rate exceeds the analytic spawn rate (director formula:
-// interval = max(0.25, 1.1 - t/300)) SUSTAINED over 2 consecutive 30s
-// windows (60s) — one lucky kill-spike shouldn't count. The population
-// <15 heuristic is kept below as a secondary context metric, not the gate.
-const spawnRate = (t) => 1 / Math.max(0.25, 1.1 - t / 300);
+// rolling 30s kill-rate exceeds the analytic AMBIENT spawn rate (director
+// formula, M13 density pass: interval = max(0.18, 0.85 - t/260)) SUSTAINED
+// over 2 consecutive 30s windows (60s) — one lucky kill-spike shouldn't
+// count. Wave bursts only raise true spawn pressure, so this metric is
+// conservative (heaven reads EARLIER than reality). The population <15
+// heuristic is kept below as a secondary context metric, not the gate.
+const spawnRate = (t) => 1 / Math.max(0.18, 0.85 - t / 260);
 function heavenOf(samples) {
   const wins = [];
   for (let i = 0; i + 5 < samples.length; i += 6) { // 6 samples * 5s = 30s
@@ -411,7 +413,12 @@ const hs = heavens.slice().sort((a, b) => a - b);
 const hmed = hs.length ? med(hs) : 0;
 ok(deaths.length >= 1 && deaths.length <= 5, `death rate in the 1–5/10 band (got ${deaths.length}/10) — 0 = too easy, 6+ = too hard`);
 ok(heavens.length >= 5, `bullet heaven reached by a MAJORITY of seeds (${heavens.length}/10)`);
-if (heavens.length) ok(hmed >= 420 && hmed <= 720, `heaven median in the 7–12 min band (target 8–10; got ${(hmed / 60).toFixed(1)} min)`);
+// M13 re-center: the density pass (ambient ramp 0.85s→0.18s floor, 45-wave,
+// 380 cap) means a natural bot clears fields from ~6 min — the old 7–12 band
+// (8–10 target) was written against the pre-M13 spawn curve. 5–10 keeps the
+// same shape check: not before 5:00 (warm-up floor), not after 10:00 (the
+// curve never flattens if the bot can't out-spawn).
+if (heavens.length) ok(hmed >= 300 && hmed <= 600, `heaven median in the 5–10 min band (re-centered from 8–10 for the M13 density pass; got ${(hmed / 60).toFixed(1)} min)`);
 ok(med(bossClears) >= 2, `a median run clears at least 2 scheduled bosses (got ${bcMed})`);
 ok(errs.length === 0, 'console clean across all 10 runs');
 

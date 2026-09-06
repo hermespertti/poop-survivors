@@ -96,7 +96,10 @@ async function statOf(fn) { return page.evaluate(fn); }
 let r = await statOf(() => { const c = window.__cap; c.restartPlay(777); return c.state(); });
 ok(Math.abs(r.stats.dmgMult - 1.1) < 1e-9 && r.stats.cdMult === 1 && r.stats.speedMult === 1 && r.stats.xpMult === 1, 'passives: fresh baseline (dmg 1.1 w/ crouton bonus, rest 1.0)');
 r = await statOf(() => { const c = window.__cap; c.restart(777); c.givePassive('meats', 3); return c.state(); });
-ok(Math.abs(r.stats.dmgMult - 1.3) < 1e-9, `meats x3 → +30% damage (got ${r.stats.dmgMult})`);
+// M13: the character damage bonus now SURVIVES recompute (pre-M13 the old
+// recompute dropped it, so crouton's +10% was gone after the first passive —
+// a latent bug). Fresh crouton baseline is 1.1, so meats x3 = 1.1 * 1.3.
+ok(Math.abs(r.stats.dmgMult - 1.43) < 1e-9, `meats x3 → dmg 1.43 (1.1 crouton x 1.3, got ${r.stats.dmgMult})`);
 r = await statOf(() => { const c = window.__cap; c.restart(777); c.givePassive('quick', 2); return c.state(); });
 ok(Math.abs(r.stats.cdMult - 0.84) < 1e-9, `quick x2 → -16% cooldown (got ${r.stats.cdMult})`);
 r = await statOf(() => { const c = window.__cap; c.restart(777); c.givePassive('slippers', 1); return c.state(); });
@@ -105,7 +108,7 @@ r = await statOf(() => { const c = window.__cap; c.restart(777); c.givePassive('
 ok(Math.abs(r.stats.xpMult - 1.4) < 1e-9, `tp x5 → +40% XP (got ${r.stats.xpMult})`);
 // caps: max level 5, no overflow
 r = await statOf(() => { const c = window.__cap; c.restart(777); c.givePassive('meats', 5); return c.state(); });
-ok(Math.abs(r.stats.dmgMult - 1.5) < 1e-9, 'meats capped at x5 (+50%)');
+ok(Math.abs(r.stats.dmgMult - 1.65) < 1e-9, 'meats capped at x5 (+50% → 1.65 w/ crouton, M13)');
 
 // B4: knockback — a bullet hit pushes an enemy away from the impact
 await page.evaluate(() => {
@@ -148,6 +151,41 @@ if (after) {
 } else {
   ok(false, 'knockback: enemy carries an outward kick vector');
 }
+await page.evaluate(() => window.__cap.unfreeze());
+
+// M13: knockback RESIST — the heavy late kinds (boulder 75%, shell 60%)
+// shrug off a share of knockback; a normal bubble (0%) doesn't. Same cannon
+// hit, single enemy, PEAK kick compared (the whip start-weapon also lands a
+// hit, so a first-tick read races between 1 and 2 hits — peak is stable).
+// Probed 2026-09-06 (test/probe-kb.mjs): bubble peak 126.7 (2 hits),
+// boulder 32.7 (2 × 17.5 = 65.5 × 0.25), shell 52.4 (2 × 26 = 65.5 × 0.4).
+async function kbKickOf(kind) {
+  await page.evaluate((k) => {
+    const c = window.__cap;
+    c.restart(911); c.freeze();
+    c.giveWeapon('plopcannon', 1);
+    c.spawn(1, k);
+    const st = c.state();
+    c.setEnemyPos(0, st.x + 18, st.z);
+    c.setEnemyHp(0, 5000); // survive so the kick is readable
+  }, kind);
+  let peak = 0, kbSeen = 0;
+  for (let i = 0; i < 12; i++) {
+    await page.evaluate(() => window.__cap.step());
+    const s = await page.evaluate(() => window.__cap.state());
+    kbSeen = Math.max(kbSeen, s.stats.kbApplied);
+    const arr = await page.evaluate(() => window.__cap.enemies(1));
+    const e = arr[0];
+    if (e) peak = Math.max(peak, Math.hypot(e.kx, e.kz));
+  }
+  return { peak, kbSeen };
+}
+const kbB = await kbKickOf('bubble');
+const kbBo = await kbKickOf('boulder');
+const kbSh = await kbKickOf('shell');
+ok(kbB.kbSeen > 0 && kbB.peak > 80, `knockback control: bubble takes a big kick (peak ${kbB.peak.toFixed(1)}, hits ${kbB.kbSeen})`);
+ok(kbBo.peak > 20 && kbBo.peak < kbB.peak * 0.35, `knockback resist: boulder (75%) peaks ${kbBo.peak.toFixed(1)} vs bubble ${kbB.peak.toFixed(1)} — under 35% of the control`);
+ok(kbSh.peak > kbBo.peak && kbSh.peak < kbB.peak * 0.5, `knockback resist: shell (60%) peaks ${kbSh.peak.toFixed(1)} — between boulder and bubble`);
 await page.evaluate(() => window.__cap.unfreeze());
 
 // B5: boss 1 (The First Wind) spawns on schedule — M3 moved it to 5:00

@@ -74,7 +74,7 @@ const kindProbe2 = await page.evaluate(() => {
   const c = window.__cap;
   const out = {};
   c.restart(88); c.freeze();
-  for (const t of [0, 60, 120, 420, 720, 1020, 1320, 1620]) {
+  for (const t of [0, 60, 120, 420, 720, 1020, 1140, 1320, 1500, 1620]) {
     c.set('time', t);
     c.clearEnemies();
     // 48 spawns, not 12: the M7 kinds carry ~11% weight each — 12 rolls has a
@@ -90,7 +90,9 @@ ok((kindProbe2[120] || '').includes('crumb') && !(kindProbe2[60] || '').includes
 ok((kindProbe2[420] || '').includes('mop') && !(kindProbe2[120] || '').includes('mop'), 'script: mop unlocks at 7:00');
 ok((kindProbe2[720] || '').includes('stink') && !(kindProbe2[420] || '').includes('stink'), 'script: stink unlocks at 12:00');
 ok((kindProbe2[1020] || '').includes('sponge') && !(kindProbe2[720] || '').includes('sponge'), 'script: sponge unlocks at 17:00');
+ok((kindProbe2[1140] || '').includes('shell') && !(kindProbe2[1020] || '').includes('shell'), 'script: shell unlocks at 19:00 (M13)');
 ok((kindProbe2[1320] || '').includes('splitter') && !(kindProbe2[1020] || '').includes('splitter'), 'script: splitter unlocks at 22:00 (M7)');
+ok((kindProbe2[1500] || '').includes('boulder') && !(kindProbe2[1320] || '').includes('boulder'), 'script: boulder unlocks at 25:00 (M13)');
 ok((kindProbe2[1620] || '').includes('spitter') && !(kindProbe2[1320] || '').includes('spitter'), 'script: spitter unlocks at 27:00 (M7)');
 
 // B2: wave bursts fire on schedule
