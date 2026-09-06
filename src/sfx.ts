@@ -5,6 +5,7 @@
 
 const A: AudioContext | null = window.AudioContext ? new window.AudioContext() : null;
 let master: GainNode | null = null;
+let sfxGain: GainNode | null = null; // M16: one-shot bus (separate from music, so each mutes independently)
 let musicGain: GainNode | null = null;
 let musicTimer: number | null = null;
 let musicStep = 0;
@@ -31,13 +32,29 @@ musicEl.addEventListener('error', () => { mp3Ready = false; });
 musicEl.volume = 0.55; // relative to master (bump above the SFX bed, under clipping)
 
 const MUTE_KEY = 'poop-survivors-mute';
+const MUSIC_MUTE_KEY = 'poop-survivors-music-mute'; // M16: music-only mute (N key)
 export function muted(): boolean { return localStorage.getItem(MUTE_KEY) === '1'; } // M11: exported for the mobile mute button label
+// M16 split mute: [M] = everything, [N] = music only. sfx/music mutes are
+// independent flags; master mute forces both off.
+export function sfxMuted(): boolean { return muted(); }
+export function musicMuted(): boolean { return muted() || localStorage.getItem(MUSIC_MUTE_KEY) === '1'; }
+function applyMuteState(): void {
+  if (master) master.gain.value = muted() ? 0 : 0.75;
+  if (sfxGain) sfxGain.gain.value = sfxMuted() ? 0 : 1;
+  if (musicGain) musicGain.gain.value = musicMuted() ? 0 : 0.25; // synth bed
+  musicEl.muted = musicMuted(); // the mp3 track
+}
 export function toggleMute(): boolean {
   const m = muted();
   localStorage.setItem(MUTE_KEY, m ? '0' : '1');
-  if (master) master.gain.value = m ? 0.75 : 0;
-  if (musicEl) musicEl.muted = m;
+  applyMuteState();
   return !m;
+}
+export function toggleMusicMute(): boolean { // returns true = music now ON
+  const m = localStorage.getItem(MUSIC_MUTE_KEY) === '1';
+  localStorage.setItem(MUSIC_MUTE_KEY, m ? '0' : '1');
+  applyMuteState();
+  return m; // was muted -> now on
 }
 
 function ensure(): boolean {
@@ -54,6 +71,9 @@ function ensure(): boolean {
     master = A.createGain();
     master.gain.value = muted() ? 0 : 0.75; // M16: 0.6->0.75 — playtest R3 "could be more snappier/louder"
     master.connect(comp);
+    sfxGain = A.createGain();
+    sfxGain.gain.value = sfxMuted() ? 0 : 1; // M16: one-shot bus, [M] mutes it
+    sfxGain.connect(master);
     musicGain = A.createGain();
     musicGain.gain.value = 0.25;
     musicGain.connect(master);
@@ -70,7 +90,7 @@ function ensure(): boolean {
     if (!mp3Src && m) {
       try { mp3Src = A.createMediaElementSource(musicEl); mp3Src.connect(m); } catch { mp3Src = null; }
     }
-    musicEl.muted = muted();
+    musicEl.muted = musicMuted();
     if (musicEl.paused) void musicEl.play().then(() => { mp3Active = true; }).catch(() => { /* autoplay still pending */ });
     else mp3Active = true;
   }
@@ -92,7 +112,7 @@ function blip(freq: number, dur: number, type: OscillatorType, vol: number, slid
   if (slide) o.frequency.exponentialRampToValueAtTime(Math.max(20, freq * slide), t + dur);
   g.gain.setValueAtTime(vol, t);
   g.gain.exponentialRampToValueAtTime(0.001, t + dur);
-  o.connect(g); g.connect(master);
+  o.connect(g); g.connect(sfxGain ?? master); // M16: one-shot bus (mute [M] = sfx off, music keeps)
   o.start(t); o.stop(t + dur + 0.02);
 }
 
@@ -111,8 +131,7 @@ function noise(dur: number, vol: number, cut: number): void {
   const g = ac.createGain();
   g.gain.setValueAtTime(vol, t);
   g.gain.exponentialRampToValueAtTime(0.001, t + dur);
-  src.connect(f); f.connect(g); g.connect(master);
-  src.start(t);
+  src.connect(f); f.connect(g); g.connect(sfxGain ?? master); src.start(t);
 }
 
 export function sfx(kind: string): void {
@@ -219,7 +238,7 @@ function startMusic(): void {
 
 // pause/resume with the game loop (title/dead: keep music, lower gain)
 export function musicIntensity(level: number): void {
-  if (muted()) return;
+  if (musicMuted()) return; // M16: [N] mute wins — never un-duck a muted track
   if (musicGain) musicGain.gain.value = 0.25 * Math.min(1.6, level);
   // M16: the real track rides the same pressure curve (louder as the
   // screen fills / a boss shows) — the boss-rush duck API is unchanged.
@@ -227,6 +246,5 @@ export function musicIntensity(level: number): void {
 }
 export function setMuted(m: boolean): void {
   localStorage.setItem(MUTE_KEY, m ? '1' : '0');
-  if (master) master.gain.value = m ? 0 : 0.75;
-  musicEl.muted = m;
+  applyMuteState();
 }

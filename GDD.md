@@ -1020,3 +1020,13 @@ lazy_load + bf16 don't change the CPU math).
   keep the kick loop + retuned synth (the §11 default) and log the A/B.
 - SW: v1→v2 bump + `.mp3` added to the cacheable-asset pattern (offline
   play must keep the soundtrack).
+
+**Fix 3 — split mute (same day, user request):**
+`[M]` = all one-shot sounds, `[N]` = music only — independent flags
+(`sfxGain` bus vs `musicGain`+`musicEl`), master mute forces both. The
+banners now show which key did what ("SOUNDS OFF [M]" / "MUSIC OFF [N]")
+— the old banner had inverted logic, fixed in the same pass.
+**HeartMuLa banger render KILLED by user** (CPU ETA 3.4h — not worth it;
+no partial audio exists, the pipeline writes only at the end). Re-attempt
+only on a GPU box or with an explicit yes-hours. The kick-loop stopgap +
+retuned synth bed is the soundtrack until then.

@@ -6,7 +6,7 @@
 // Art: hand-authored pixel arrays over one 16-color palette, 8x8 bitmap font.
 
 import { PALETTE, SPRITES, drawSprite, drawSpriteFlipped, drawScaled, drawText } from './art';
-import { sfx, toggleMute, muted, musicIntensity } from './sfx';
+import { sfx, toggleMute, toggleMusicMute, muted, musicIntensity } from './sfx';
 import { fxKill, fxGem, fxLevelUp, fxEvolve, fxBossKill, fxFlushKill, fxTick, fxDraw, fxState, fxReset } from './fx';
 
 // ---------- deterministic RNG (mulberry32) ----------
@@ -1233,13 +1233,18 @@ const RUN_LEN = 1800; // 30:00 — the full director run (M3)
 let orbitPos: { x: number; z: number; r: number } | null = null;
 let orbit2Pos: { x: number; z: number; r: number } | null = null;
 let gnatPos: { x: number; z: number } | null = null; // M8: gnat companion
-let muteMsgT = 0; // "muted" banner timer (set by the M key)
+let muteMsgT = 0; // "SOUNDS MUTED" banner timer (set by the M key)
+let muteMsgOn = true; // true = banner says SOUNDS MUTED, false = SOUNDS ON
+let musicMsgT = 0; // M16: music-mute banner timer (N key)
+let musicMsgOff = false; // true = banner says MUSIC OFF, false = MUSIC ON
 let paused = false; // M7: P toggles pause (play mode only)
 
 function update(): void {
   syncKeys();
-  // mute toggle: M — works on title/play/levelup/dead/win (before mode gates)
-  if (justPressed('m')) { const on = toggleMute(); G.flashT = 0.2; muteMsgT = on ? 0 : 1.4; }
+  // mute toggles (M16 split): [M] = attack/hit/UI sounds, [N] = music only.
+  // Both work on title/play/levelup/dead/win (before mode gates).
+  if (justPressed('m')) { toggleMute(); G.flashT = 0.2; muteMsgT = 1.4; muteMsgOn = muted(); }
+  if (justPressed('n')) { const on = toggleMusicMute(); G.flashT = 0.15; musicMsgT = 1.4; musicMsgOff = !on; }
   // pause: P — play mode only (the soak harnesses run with __cap.step, which
   // bypasses this gate, so pause never touches determinism tests)
   if (justPressed('p') && G.mode === 'play') paused = !paused;
@@ -2011,10 +2016,15 @@ function drawHud(t: number): void {
   } else if (G.time > RUN_LEN - 30 && !G.flushResolved) {
     center('THE FINAL FLUSH APPROACHES...', 76, 0);
   }
-  // mute banner (M key): "MUTED" while the timer runs
+  // mute banners (M16 split): [M] sounds, [N] music — each shows its own
+  // state for 1.4s so you always know which key did what
   if (muteMsgT > 0) {
     muteMsgT -= DT;
-    if (Math.floor(t * 4) % 2 === 0) center('MUTED [M]', 66, 2);
+    if (Math.floor(t * 4) % 2 === 0) center(muteMsgOn ? 'SOUNDS OFF [M]' : 'SOUNDS ON [M]', 66, 2);
+  }
+  if (musicMsgT > 0) {
+    musicMsgT -= DT;
+    if (Math.floor(t * 4) % 2 === 0) center(musicMsgOff ? 'MUSIC OFF [N]' : 'MUSIC ON [N]', 78, 2);
   }
   // pause banner (P key): while paused, the sim is frozen — say so
   if (paused && G.mode === 'play') {
@@ -2148,7 +2158,7 @@ function drawTitle(t: number): void {
   center('STAGE: ' + STAGES[selectedStage].name.toUpperCase() + `  [S] (${stgChar('kitchen')}${stgChar('bathroom')}${stgChar('compost')})`, 164, 0);
   // M11 gold shop (VS-style meta): banked gold finally spends. Keyboard Q/W/E/R
   // buys a row; on a phone, TAP the row. Rows match shopRowY() for hit-testing.
-  center(COARSE ? 'UPGRADES: TAP A ROW' : 'UPGRADES QWER  P PAUSE  M MUTE  F FS', 176, 2);
+  center(COARSE ? 'UPGRADES: TAP A ROW' : 'UPGRADES QWER  P PAUSE  M SOUND  N MUSIC  F FS', 176, 2);
   const SHOPKEYS = ['Q', 'W', 'E', 'R'];
   const SHOPBRIEF: Record<string, string> = { hp: '+15HP', dmg: '+10%DMG', xp: '+10%XP', gold: '+10%GOLD' };
   UPGRADES.forEach((up, i) => {
