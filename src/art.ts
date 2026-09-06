@@ -161,6 +161,37 @@ const plop = mk(8, 8, [
   ],
 ]);
 
+// ---------- spit (7x7) — ENEMY gunk shot (M14). The spitter's lobs and the
+// Lint King's radial rings are `kind:'gunk'` with `enemy:true`; pre-M14 they
+// rendered the player plop (a brown blob with a BRIGHT GREEN 7/8 center), so
+// at 320x240 a flying green blob read as the green XP gem — "grab it" and
+// "dodge it" looked identical (playtest round 2, item 1). This sprite uses the
+// game's color language: BLUE = enemy (bubbles are blue), so a blue blob reads
+// as hostile at a glance, distinct from the green gem (pickup) and the brown
+// player plop (yours). The core is a dark bubble shade, not a bright sparkle,
+// so it never mimics the gem's white-green glint. 2-frame guggle (light 9
+// center <-> deep b) makes it read as live/dangerous.
+const spit = mk(7, 7, [
+  [
+    '..444..',
+    '.4bbb4.',
+    '4b999b4',
+    '.4bbb4.',
+    '..444..',
+    '...4...',
+    '.......',
+  ],
+  [
+    '..444..',
+    '.4aab4.',
+    '4ab9ba4',
+    '.4aab4.',
+    '..444..',
+    '...4...',
+    '.......',
+  ],
+]);
+
 // ---------- cracker (8x8) — orbiting cracker shard ----------
 const cracker = mk(8, 8, [
   [
@@ -1490,7 +1521,7 @@ export const SPRITES: Record<string, Sprite> = {
   crouton, croutonHit, bubble, bubbleHit, gem, bolt,
   boulder, boulderHit, shell, shellHit, cheese, cheeseHit, onion, onionHit, // M13
   turret, trail, boomer, // M13 weapons
-  plop, cracker, boss, bossHit, chest,
+  plop, spit, cracker, boss, bossHit, chest,
   droplet, crumb, crumbHit, mop, mopHit, stink, stinkHit,
   sponge, spongeHit, colonel, colonelHit, constipation, constipationHit,
   express, expressHit, sphincter, sphincterHit, flush, flushHit,

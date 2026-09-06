@@ -40,8 +40,16 @@ function xpToNext(level: number): number {
   if (level < 20) base = 5 + 10 * (level - 1);
   else if (level < 40) base = 185 + 13 * (level - 19);
   else base = 445 + 16 * (level - 39);
-  if (level === 20) base += 600;
-  if (level === 40) base += 2400;
+  // M14: smooth the 20/40 milestone walls. Pre-M14 they dumped a flat +600 /
+  // +2400 onto a SINGLE transition — 20->21 = 798 (a 4.3x spike vs the 185
+  // before / 224 after) and 40->41 = 2861 (a 6.4x spike vs 445/477). A normal
+  // kill drip (1-6 XP each) cleared that in a minute, so the bar to 21/41 felt
+  // "very slow exactly at 20/40, normal at 21/41" (playtest round 2, item 2:
+  // "not linear"). The wall is a designed milestone moment (m1 pins the drop),
+  // so keep it as THE single hardest level-up but cap the bump at ~2.5x the
+  // surrounding slope — still clearly a wall, no dry spell.
+  if (level === 20) base = Math.round(base * 2.5); // 198 -> 495 (was 798)
+  if (level === 40) base = Math.round(base * 2.5); // 461 -> 1153 (was 2861)
   return base;
 }
 
@@ -56,7 +64,7 @@ const WEAPONS: Record<string, {
 }> = {
   fartwhip:   { name: 'Fart Whip',    desc: 'Piercing gusts in your facing dir', maxLvl: 8, baseDmg: 10, baseCd: 1.6, dmgPerLvl: 3, cdPerLvl: -0.04, evolved: false, evoWith: 'quick', evolvesTo: 'superfart' },
   plopcannon: { name: 'Plop Cannon',  desc: 'Heavy aimed gunk blob',             maxLvl: 8, baseDmg: 22, baseCd: 2.4, dmgPerLvl: 8, cdPerLvl: -0.10, evolved: false, evoWith: 'sticky', evolvesTo: 'stickyplop' },
-  crackerring:{ name: 'Cracker Ring', desc: 'Orbiting cracker shards',           maxLvl: 8, baseDmg: 6,  baseCd: 0.22, dmgPerLvl: 3, cdPerLvl: -0.004, evolved: false, evoWith: 'widestink', evolvesTo: 'halo' },
+  crackerring:{ name: 'Cracker Ring', desc: 'Orbiting cracker shards',           maxLvl: 8, baseDmg: 6,  baseCd: 0.22, dmgPerLvl: 1.5, cdPerLvl: -0.004, evolved: false, evoWith: 'widestink', evolvesTo: 'halo' }, // M14: 3→1.5 — playtest round 2 item 3 (AFK-able to ~lvl 40): capped the DPS growth so the ring is defense + chip, not a mid-game solo-clearer (lvl8 27→16.5/tick, 141→86 DPS); halo evo untouched
   puddle:     { name: 'Puddle',       desc: 'Damaging puddles near you',         maxLvl: 8, baseDmg: 12, baseCd: 3.0, dmgPerLvl: 5, cdPerLvl: -0.06, evolved: false, evoWith: 'meats', evolvesTo: 'slakelake' },
   bouncy:     { name: 'Bouncy Poop',  desc: 'Bounces between enemies',           maxLvl: 8, baseDmg: 8,  baseCd: 1.2, dmgPerLvl: 4, cdPerLvl: -0.05, evolved: false, evoWith: 'gloves', evolvesTo: 'superball' },
   stinkaura:  { name: 'Stink Aura',   desc: 'Damages nearby enemies, passive',   maxLvl: 8, baseDmg: 4,  baseCd: 0.5, dmgPerLvl: 2, cdPerLvl: -0.02, evolved: false, evoWith: 'lucky', evolvesTo: 'ghost' },
@@ -176,6 +184,19 @@ function enemyHp(kind: string): number {
   const base = ENEMY_TYPES[kind].hp;
   return base * (1 + G.time / 90);
 }
+// M14: enemy DAMAGE now scales too. Pre-M14 it didn't — HP ramped 21x by
+// 30:00 but a Lint King hit for 13 at 2:00 AND 13 at 29:00. The bot (and a
+// player) won a pure tankiness race with zero lethality race, so after the
+// M14 ring nerf the natural soak went 1/10 -> 0/10 deaths, 100% HP in every
+// band, boss 6/6: the gate's "0 = too easy" and the GDD's "decent-but-not-
+// invincible, loses to specific bad rolls" shape both say the endgame needs
+// real threat. Ramp is 1.0 -> ~1.3 over the run (/6000). Tuned by soak:
+// /3000 (1.6x) gave 6/10 deaths (too hot), /6000 (1.3x) lands the 1-5 band.
+// Much milder than the 21x HP ramp, so the early game (where the bot
+// historically dies) is nearly untouched and only the 15-30 min boss gauntlet
+// feels lethal. Applied at every enemy->player hit site (contact, boss,
+// flush, enemy bullet) before armor subtraction.
+function eDmg(base: number): number { return base * (1 + G.time / 6000); }
 type Gem = { x: number; z: number; val: number; vx: number; vz: number; pulled: boolean };
 type Bullet = { x: number; z: number; vx: number; vz: number; life: number; dmg: number; ang: number; hitR: number; kind: string; bounces?: number; bounceSpeed?: number; linger?: number; hitIds?: number[]; enemy?: boolean; visual?: boolean; blast?: number; dir?: number; returnHits?: number };
 type Zone = { x: number; z: number; r: number; life: number; tick: number; dmg: number; tint?: string };
@@ -1295,10 +1316,10 @@ function update(): void {
     // not they connect, they skip the enemy/wall/boss/flush damage blocks.
     if (b.enemy) {
       if (Math.hypot(p.x - b.x, p.z - b.z) < PLAYER.radius + b.hitR && p.invuln <= 0) {
-        p.hp -= Math.max(1, b.dmg - G.armor); p.invuln = PLAYER.invulnAfterHit;
+        p.hp -= Math.max(1, eDmg(b.dmg) - G.armor); p.invuln = PLAYER.invulnAfterHit;
         G.shake = Math.max(G.shake, 4);
         sfx('hurt');
-        G.dmgNums.push({ x: p.x, z: p.z - 8, vy: -26, t: 0.8, txt: '-' + Math.max(1, b.dmg - G.armor), crit: true });
+        G.dmgNums.push({ x: p.x, z: p.z - 8, vy: -26, t: 0.8, txt: '-' + Math.max(1, Math.round(eDmg(b.dmg)) - G.armor), crit: true });
         if (p.hp <= 0) { p.hp = 0; endRun(false, false); return; }
         G.bullets.splice(i, 1);
       }
@@ -1431,10 +1452,10 @@ function update(): void {
     const kd = Math.exp(-4 * DT);
     e.kbx *= kd; e.kbz *= kd;
     if (d < e.radius + PLAYER.radius && p.invuln <= 0) {
-      p.hp -= Math.max(1, e.dmg - G.armor); p.invuln = PLAYER.invulnAfterHit;
+      p.hp -= Math.max(1, eDmg(e.dmg) - G.armor); p.invuln = PLAYER.invulnAfterHit;
       G.shake = 6; G.flashT = Math.max(G.flashT, 0.12);
       sfx('hurt'); // the player takes damage — distinct from the enemy 'hit' clatter
-      G.dmgNums.push({ x: p.x, z: p.z - 8, vy: -26, t: 0.8, txt: '-' + Math.max(1, e.dmg - G.armor), crit: true });
+      G.dmgNums.push({ x: p.x, z: p.z - 8, vy: -26, t: 0.8, txt: '-' + Math.max(1, Math.round(eDmg(e.dmg)) - G.armor), crit: true });
       if (p.hp <= 0) { p.hp = 0; endRun(false, false); return; }
     }
   }
@@ -1504,10 +1525,10 @@ function update(): void {
     b.minionCd -= DT;
     if (b.minionCd <= 0 && G.enemies.length < 40) { b.minionCd = 8; spawnEnemy(pickKind()); }
     if (d < b.radius + PLAYER.radius && p.invuln <= 0) {
-      p.hp -= Math.max(1, b.dmg - G.armor); p.invuln = PLAYER.invulnAfterHit;
+      p.hp -= Math.max(1, eDmg(b.dmg) - G.armor); p.invuln = PLAYER.invulnAfterHit;
       G.shake = 10; G.flashT = 0.2;
       sfx('hurt');
-      G.dmgNums.push({ x: p.x, z: p.z - 10, vy: -26, t: 0.9, txt: '-' + Math.max(1, b.dmg - G.armor), crit: true });
+      G.dmgNums.push({ x: p.x, z: p.z - 10, vy: -26, t: 0.9, txt: '-' + Math.max(1, Math.round(eDmg(b.dmg)) - G.armor), crit: true });
       if (p.hp <= 0) { p.hp = 0; endRun(false, false); return; }
     }
   }
@@ -1546,7 +1567,7 @@ function update(): void {
       e.x += (dx / d) * e.speed * DT;
       e.z += (dz / d) * e.speed * DT;
       if (d < e.radius + PLAYER.radius && p.invuln <= 0) {
-        p.hp -= Math.max(1, e.dmg - G.armor); p.invuln = PLAYER.invulnAfterHit;
+        p.hp -= Math.max(1, eDmg(e.dmg) - G.armor); p.invuln = PLAYER.invulnAfterHit;
         G.shake = 6;
         sfx('hurt');
         if (p.hp <= 0) { p.hp = 0; endRun(false, false); return; }
@@ -1731,7 +1752,8 @@ function render(t: number): void {
   }
   if (G.chest) drawSprite(ctx, SPRITES.chest, Math.round(G.chest.x - cx) - 6, Math.round(G.chest.z - cy) - 8, 0);
   for (const b of G.bullets) {
-    if (b.kind === 'plop' || b.kind === 'gunk' || b.kind === 'spritz' || b.kind === 'stickyplop') drawSprite(ctx, SPRITES.plop, Math.round(b.x - cx) - 4, Math.round(b.z - cy) - 4, 0);
+    if (b.enemy && b.kind === 'gunk') drawSprite(ctx, SPRITES.spit, Math.round(b.x - cx) - 3, Math.round(b.z - cy) - 3, Math.floor(t * 8) % 2); // M14: hostile blue spit, not the green-ish player plop
+    else if (b.kind === 'plop' || b.kind === 'gunk' || b.kind === 'spritz' || b.kind === 'stickyplop') drawSprite(ctx, SPRITES.plop, Math.round(b.x - cx) - 4, Math.round(b.z - cy) - 4, 0);
     else if (b.kind === 'superfart') drawScaled(ctx, SPRITES.bolt, Math.round(b.x - cx) - 8, Math.round(b.z - cy) - 3, 2, 0);
     else if (b.kind === 'mine') {
       // arming blink: faster + brighter as the fuse runs out

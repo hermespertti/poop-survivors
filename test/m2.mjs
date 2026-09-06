@@ -29,7 +29,7 @@ const curve = await page.evaluate(() => {
   for (let l = 1; l < 60; l++) out[l] = f(l);
   return out;
 });
-ok(curve[1] === 5 && curve[2] === 15 && curve[3] === 25 && curve[10] === 95 && curve[19] === 185 && curve[20] === 798 && curve[40] === 2861 && curve[41] === 477, 'XP curve: all VS-wiki anchors exact (regression)');
+ok(curve[1] === 5 && curve[2] === 15 && curve[3] === 25 && curve[10] === 95 && curve[19] === 185 && curve[20] === 495 && curve[40] === 1153 && curve[41] === 477, 'XP curve: all VS-wiki anchors exact (M14 walls smoothed to 495/1153)');
 
 async function snapTraj(seed, n) {
   await page.evaluate((sd) => { window.__cap.freeze(); window.__cap.restart(sd); window.__cap.move(1, 0.5); }, seed);

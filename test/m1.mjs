@@ -35,16 +35,16 @@ const curve = await page.evaluate(() => {
   for (let l = 1; l < 60; l++) out[l] = f(l);
   return out;
 });
-const expectAt = { 1: 5, 2: 15, 3: 25, 4: 35, 10: 95, 19: 185, 40: 445 + 16 * 1 + 2400 };
-// 20: base = 185 + 13*(20-19) = 198, +600 wall = 798
-const expect20 = 198 + 600;
+const expectAt = { 1: 5, 2: 15, 3: 25, 4: 35, 10: 95, 19: 185, 40: Math.round((445 + 16 * 1) * 2.5) };
+// 20: base = 185 + 13*(20-19) = 198, M14 wall = 198*2.5 = 495 (pre-M14 was +600 = 798)
+const expect20 = Math.round(198 * 2.5);
 ok(curve[1] === 5, 'xp 1->2 is 5 (wiki)');
 ok(curve[2] === 15, 'xp 2->3 is 15 (wiki)');
 ok(curve[3] === 25, 'xp 3->4 is 25 (wiki)');
 ok(curve[10] === 95, 'xp 10->11 is 95');
 ok(curve[19] === 185, 'xp 19->20 is 185');
-ok(curve[20] === expect20, `xp 20->21 is 198+600 wall = ${expect20}`);
-ok(curve[40] === expectAt[40], `xp 40->41 = 445+16+2400 wall = ${expectAt[40]}`);
+ok(curve[20] === expect20, `xp 20->21 wall is 198*2.5 = ${expect20} (M14 smoothed)`);
+ok(curve[40] === expectAt[40], `xp 40->41 wall = (445+16)*2.5 = ${expectAt[40]} (M14 smoothed)`);
 ok(curve[41] === 477, 'xp 41->42 = 445+16*2');
 // monotone increasing except at the two designed wall drops (20->21, 40->41)
 let mono = true;

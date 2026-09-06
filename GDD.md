@@ -280,6 +280,7 @@ bars) and played by a `Chip` synth that emulates the APU channels.
 | **M11** | human playability: text contrast, gold shop (meta sink), rich end screens, mobile start cue + pause/mute buttons + tap char/stage/shop | m11 feature suite 15/0; full gate 183/0 across 6 suites — **DONE 2026-09-04 (§24)** |
 | **M12** | polish + variety + M7 gate close: 4 level-up options, bold bitmap font + title panel, og:url, Lint King tune (HP 2200→1800, ring 12→10, contact 16→13) + bot gap-dodge/heal-seek/AoE-kit | M7 balance gate 5/5 (deaths 2/10, heaven 10/10 @7.9min, boss median 6); full gate 183/0 — **DONE 2026-09-05 (§25)** |
 | **M13** | content + feel: density pass (faster ambient, 45-wave, 380 cap), boulder/shell (KB-resistant heavies), 2 chars (Cheese/Onion) + facing animation, legible digits, The Compost stage + per-stage floor detail, Cracker Ring rework (orbiting shards + damage band), mobile fullscreen, 3 new weapon mechanics (Plop Turret / Gunk Boomer / Slime Trail + evos + support passives) | full gate 209/0 across 6 suites; M7 balance soak re-run post-density 5/5 (deaths 1/10, heaven 10/10 @6.4min in the re-centered 5–10 band, boss median 6) — **DONE 2026-09-06 (§26)** |
+| **M14** | playtest round 2 resolution: enemy gunk gets its own blue `spit` sprite (no more gem-vs-bullet read), 20/40 XP walls smoothed (+600/+2400 spikes → ×2.5, 495/1153), ring DPS-growth cap (dmgPerLvl 3→1.5, 141→86 DPS) + enemy damage ramp eDmg (1.0→1.3, the soak-forced fix after the ring nerf took deaths 1→0) | M7 balance gate 5/5 (deaths 3/10, heaven 10/10 @7.2min, boss median 6); full gate 209/0 — **DONE 2026-09-06 (§27)** |
 
 ## 15. Decisions (locked 2026-08-31, user)
 
@@ -813,3 +814,72 @@ variance, same shape as M12's residual deaths), heaven **10/10 median
 pressure 100% through 25:00, console clean. Deterministic: the re-run's
 report is byte-identical to the pre-re-center run except the gate verdict
 line.
+
+## 27. M14 playtest round 2 resolution (2026-09-06) — the ring reined in, the XP walls smoothed, and the damage ramp that the soak forced
+
+Playtest round 2 (§20, parked 2026-09-03) had three open items. All three
+shipped; item 3's fix turned out to be load-bearing for the whole balance
+posture, and the soak showed why.
+
+**1. Gunk bullets vs XP gems (the "grab it or dodge it" read).**
+Root cause was visual, not mechanical: enemy gunk shots (spitter lobs, the
+Lint King's 8-way rings — all `kind:'gunk'` with `enemy:true`) rendered the
+player's `plop` sprite, which is a brown blob with a **bright green (7/8)
+core** — the same green as the XP gem. At 320×240 a flying green blob read
+as a pickup. Fix: a new 7×7 `spit` sprite in the game's color language —
+**blue = enemy** (bubbles are blue), so it's distinct from the green gem
+(pickup) and the brown plop (yours), with a dark core (never a sparkle) and
+a 2-frame guggle. Enemy gunk only; the player's GUNK FOUNTAIN evo keeps the
+brown plop. Zero balance impact.
+
+**2. The 20/40 XP walls (the "not linear" crawl).**
+`xpToNext` dumped a flat `+600` / `+2400` onto a *single* transition:
+20→21 = 798 (a 4.3× spike vs the 185 before / 224 after) and 40→41 = 2861
+(6.4× vs 445/477). A normal kill drip cleared the surrounding levels in
+seconds but sat on those bars for minutes — exactly the reported "slow at
+20/40, normal at 21/41." The walls are a designed milestone moment (the m1
+suite pins the drop), so they stay as the single hardest level-up but the
+bump is capped at **×2.5 of the local slope**: 20→21 = 495, 40→41 = 1153.
+Levels 1–19 and 21–60 are byte-identical. Side effect, measured: a full run
+now ends at **lv 53** (M13: 50) — the smoothing is a real, deliberate buff
+(removing the dry-spell IS the fix).
+
+**3. The ring too strong (AFK-able to ~40) — and what the soak found next.**
+Ring lvl 8 dealt 27 dmg / 0.192 s ≈ **141 DPS** across a full 360° band
+(27 DPS at lvl 1 — 5.2× growth, the CD never really moved). Cap the
+per-level damage growth per the §20 direction: `dmgPerLvl` **3 → 1.5**
+(lvl 8: 27 → 16.5/tick, 141 → 86 DPS, −39%). The ring stays a real wall in
+boss windows, but mid-game it's defense + chip, not a solo-clearer. The halo
+evolution is untouched — the AFK complaint was about the base ring to ~40,
+and a real build's evolved line outranks it by then.
+
+Then the balance soak told the story the playtest couldn't — measured three
+ways (10 seeds each):
+
+| config | deaths | final level |
+|---|---|---|
+| M13 baseline (old ring, old XP) | 1/10 | 50–52 |
+| ring nerf only (old XP) — isolation | **0/10** | 50–52 |
+| full M14 (new ring, new XP) | 0/10 | 53–54 |
+
+The ring nerf (not the XP smoothing) is what removed the last death: with
+the ring reined in, the bot ran 100% HP in every 5-minute band, 6/6 bosses,
+zero threat — the gate's "0 = too easy" and the GDD's "decent-but-not-
+invincible, loses to specific bad rolls" shape both say that's wrong. The
+root cause is a real asymmetry, not a gate artifact: enemy **HP scales 21×**
+over the run (`1 + time/90`) but enemy **damage never scaled at all** — a
+Lint King hit for 13 at 2:00 and 13 at 29:00. The player wins a pure
+tankiness race with no lethality race, so nothing in the endgame can hurt
+them. Fix: **enemy damage now ramps too** — `eDmg(base) = base *
+(1 + time/6000)`, 1.0 → ~1.3 by 30:00, applied at all four enemy→player hit
+sites (contact, boss, flush, enemy bullet) before armor, damage numbers
+updated to show the true value. Tuned by soak: at ÷3000 (1.6×) the ramp
+overshot to 6/10 deaths (right shape, too hot); at ÷6000 it lands mid-band.
+
+**M14 final (official `test/balance.mjs` gate): 5/5 GREEN** — deaths
+**3/10** (target 1–5; the three: 7777 @1788s, 31415 @1724s, 1618 @1798s —
+all post-Lint-King attrition, lv 52–54, "soup" build-variance, the exact
+death shape §25 describes), heaven **10/10 median 7.2 min** (band 5–10),
+boss median **6/6** (target ≥2), console clean. The endgame is a survival
+test again without being a wall: the ring does its job (keep you alive), the
+damage ramp decides whether your build does too.
