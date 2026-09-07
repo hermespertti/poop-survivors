@@ -1088,3 +1088,25 @@ Validation: official baseline 5/5 unchanged (deaths 3/10, heaven 10/10
 @7.2min — baseline's halo chests just started WORKING, the gate absorbed it);
 variants soak 6/6 with avocado boss med 1→4 and surv 0/5→2/5 (that was the
 disarm, not the numbers); full gate 248/0 across 7 suites (m4 78→96).
+
+## 32. M19 architecture split (2026-09-07) — the monolith breaks ground
+
+"Real architecture, fewer magic numbers" (user brief). **Phase 1 shipped:**
+every pure-data declaration left `main.ts` — `types.ts` (entity/state types),
+`constants.ts` (global knobs: DT, RUN_LEN, TILE/WORLD/VIEW, PLAYER, spike +
+item cadence), and `tables/{weapons,chars,enemies,sprites}.ts`
+(WEAPONS+PASSIVES+XP curve, CHARACTERS+STAGES+shop ladder,
+ENEMY_TYPES+BOSS_SCHEDULE+BOSS_STATS+director SCRIPT, sprite pick tables).
+main.ts 2419→2164 lines; balance edits no longer touch mechanics files.
+
+**Oracle discipline:** `test/fingerprint.mjs` freezes the sim at 5 checkpoints
+across 4 seeds and hashes the full state (fx excluded — wall-clock cosmetic
+layer). Every refactor must reproduce `815bf2e5…` byte-identically; phase 1
+did, plus full gate 248/0 and a clean vite build. Any split that shifts RNG
+order fails loud.
+
+**Phase 2 (next):** logic modules — stage (run lifecycle + shop), levelup
+(option economy), systems (firing/bosses/director), update/render/input —
+with shared mutable state via ES live bindings: one owning module does all
+reassignments, readers import bare names, foreign writes become setters.
+Same audit: tsc + fingerprint + gate.
