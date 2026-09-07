@@ -12,7 +12,7 @@ import { fxKill, fxGem, fxLevelUp, fxEvolve, fxBossKill, fxFlushKill, fxTick, fx
 // ---------- deterministic RNG (mulberry32) ----------
 import {
   TILE, WORLD_W, WORLD_H, VIEW_W, VIEW_H, PLAYER, DT, RUN_LEN, STICK_R,
-  SPIKE_T, SPIKE_EVERY, ITEM_T, META_KEY
+  SPIKE_T, SPIKE_EVERY, ITEM_T
 } from './constants';
 import type {
   Enemy, Gem, Bullet, Zone, Turret, DmgNum, Mode, WState, ItemOpt, Game, Meta, Boss
@@ -21,25 +21,9 @@ import { WEAPONS, PASSIVES, xpToNext } from './tables/weapons';
 import { CHARACTERS, STAGES, STAGE_IDS, UPGRADES } from './tables/chars';
 import { ENEMY_TYPES, BOSS_SCHEDULE, BOSS_STATS, SCRIPT } from './tables/enemies';
 import { ENEMY_SPR, BOSS_SPR, UNLOCK_LABEL } from './tables/sprites';
+import { mulberry32 } from './rng';
+import { META, saveMeta, resetMeta } from './meta';
 
-function mulberry32(seed: number) {
-  let a = seed >>> 0;
-  return () => {
-    a |= 0; a = (a + 0x6D2B79F5) | 0;
-    let t = Math.imul(a ^ (a >>> 15), 1 | a);
-    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-}
-
-// ---------- world / camera ----------
-
-// ---------- player ----------
-
-// ---------- XP curve (VS wiki). req N -> N+1 ----------
-
-// ---------- weapons (data table) ----------
-// base dmg/cd, per-level deltas. Slot: 'weapon'. superfart is evolution-only.
 
 function wDmg(id: string, lvl: number): number { return (WEAPONS[id].baseDmg + WEAPONS[id].dmgPerLvl * (lvl - 1)) * G.stats.dmgMult; }
 function wCd(id: string, lvl: number): number { return Math.max(0.15, (WEAPONS[id].baseCd + WEAPONS[id].cdPerLvl * (lvl - 1)) * G.stats.cdMult); }
@@ -79,24 +63,6 @@ function eDmg(base: number): number { return base * (1 + G.time / 6000); }
 // M13: a dropped Plop Turret — stationary, fires for you on its own cadence.
 
 
-// ---------- meta (M4): gold + unlocks persist across runs (localStorage) ----------
-// M11: upgrades = persistent gold-shop levels (the pre-M11 loop banked gold
-// and never spent it — the meta wallet was a counter, not a progression).
-function loadMeta(): Meta {
-  try {
-    const raw = localStorage.getItem(META_KEY);
-    if (raw) { const m = JSON.parse(raw); if (m && Array.isArray(m.unlocked)) { if (!m.upgrades || typeof m.upgrades !== 'object') m.upgrades = {}; return m as Meta; } }
-  } catch {}
-  return { gold: 0, unlocked: ['crouton'], achievements: [], bestTime: 0, bestKills: 0, upgrades: {} };
-}
-function saveMeta(m: Meta): void {
-  try { localStorage.setItem(META_KEY, JSON.stringify(m)); } catch {}
-}
-let META: Meta = loadMeta();
-// stage selection: 'kitchen' (default), 'bathroom' (survive a run),
-// 'compost' (M13: beat the Lint King once — the final stage)
-// M13: ordered id list — the title selector and tap handler cycle through all
-// of these (pre-M13 it was a 2-way kitchen/bathroom toggle).
 function cycleStage(): void {
   // advance to the next UNLOCKED stage (wrap). Repeats on the same one only
   // if it's the sole unlocked stage (kitchen-only new save).
@@ -2111,7 +2077,7 @@ const win = window;
     selectedStage = id;
     return { ok: true, stage: selectedStage };
   },
-  metaReset: () => { META = { gold: 0, unlocked: ['crouton'], achievements: [], bestTime: 0, bestKills: 0, upgrades: {} }; saveMeta(META); return (win as any).__cap.state(); },
+  metaReset: () => { resetMeta(); return (win as any).__cap.state(); },
   metaGive: (unlock: string) => { if (!META.unlocked.includes(unlock)) META.unlocked.push(unlock); saveMeta(META); return (win as any).__cap.state(); },
   metaGold: (n: number) => { META.gold = n; saveMeta(META); return (win as any).__cap.state(); },
   metaUpgrade: (id: string, lvl = 1) => { META.upgrades[id] = lvl; saveMeta(META); return (win as any).__cap.state(); }, // M11: seed shop levels (soak harness)
