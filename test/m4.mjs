@@ -210,10 +210,10 @@ ok(charProbe.onionOk.ok === true, 'onion selectable after unlock (M13)');
 ok(charProbe.weaponsCrouton.fartwhip === 1, 'crouton starts Fart Whip');
 ok(charProbe.weaponsHotdog.plopcannon === 1, 'hotdog starts Plop Cannon');
 ok(charProbe.weaponsAvocado.puddle === 1, 'avocado starts Puddle');
-ok(charProbe.armorAvocado === 1, 'avocado has +1 armor');
+ok(charProbe.armorAvocado === 2, `avocado has +2 armor (M17 tank body, got ${charProbe.armorAvocado})`);
 ok(charProbe.weaponsPlunger.spritz === 1, 'plunger starts Gunk Spritz (M7)');
 ok(charProbe.weaponsCheese.mine === 1, 'cheese starts Gunk Mine (M13)');
-ok(charProbe.hpCheese === 125, `cheese has +25 HP (maxHp 125, M13, got ${charProbe.hpCheese})`);
+ok(charProbe.hpCheese === 140, `cheese has +40 HP (maxHp 140, M17 tune, got ${charProbe.hpCheese})`);
 ok(charProbe.weaponsOnion.bouncy === 1, 'onion starts Bouncy Poop (M13)');
 ok(Math.abs(charProbe.goldOnion - 1.15) < 0.001, `onion has +15% gold (goldMult 1.15, M13, got ${charProbe.goldOnion})`);
 

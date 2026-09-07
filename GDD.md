@@ -283,6 +283,7 @@ bars) and played by a `Chip` synth that emulates the APU channels.
 | **M14** | playtest round 2 resolution: enemy gunk gets its own blue `spit` sprite (no more gem-vs-bullet read), 20/40 XP walls smoothed (+600/+2400 spikes → ×2.5, 495/1153), ring DPS-growth cap (dmgPerLvl 3→1.5, 141→86 DPS) + enemy damage ramp eDmg (1.0→1.3, the soak-forced fix after the ring nerf took deaths 1→0) | M7 balance gate 5/5 (deaths 3/10, heaven 10/10 @7.2min, boss median 6); full gate 209/0 — **DONE 2026-09-06 (§27)** |
 | **M15** | the WebGL2 FX pass (locked Q2): GPU additive particles + shockwave rings on an overlay canvas, cosmetic-only particle event queue (kill/gem/level-up/evolution/boss-death/flush-victory), game logic stays pure CPU so deterministic soaks don't move; `src/fx.ts` + `#fx` overlay + `m15` suite (event contract + determinism-with-FX + GL-error soak) | full gate 230/0 across 7 suites (m15 21/0); balance soak must reproduce M14 exactly — **DONE 2026-09-06 (§28)** |
 | **M16** | playtest round 3 audio pass: snappy attack SFX (no slow glides, noise-transient punch, master 0.6→0.75 + DynamicsCompressor), dual-source music (looped mp3 via WebAudio with the synth sequencer as fallback; `musicIntensity` drives both), 132BPM kick-loop stopgap at `public/music.mp3`, split mute ([M] sounds / [N] music, banners fixed), HeartMuLa banger render attempted on CPU and killed by user (3.4h ETA; re-attempt only on GPU or with explicit OK) | full gate 230/0 across 7 suites post-audio; playtest R4 — **DONE 2026-09-06 (§29)** |
+| **M17** | build-diversity balance pass: `test/balance-variants.mjs` (6 characters × 5 seeds, official `think()` verbatim) closes the bot pick-strategy gap from §22; soak verdicts then tuned — Cheese (mine kit starved, died 5–10min 5/5): +15% dmg/+10% speed/+1 armor/+40 HP (multiplier-fraction knobs — a fat-fingered `15` was +1500%); Avocado (paper body at first boss): +2 armor/+40 HP/+15% dmg, puddle-buff experiment rolled back (worse heaven); Plunger accepted as the tank identity (strongest, boss med 6, no nerf) | official baseline 5/5 still green (deaths 3/10, heaven 10/10 @7.2min); variants soak 6/6 viable (was 5/6, cheese FAIL); full gate 230/0 — **DONE 2026-09-07 (§30)** |
 
 ## 15. Decisions (locked 2026-08-31, user)
 
@@ -1030,3 +1031,34 @@ banners now show which key did what ("SOUNDS OFF [M]" / "MUSIC OFF [N]")
 no partial audio exists, the pipeline writes only at the end). Re-attempt
 only on a GPU box or with an explicit yes-hours. The kick-loop stopgap +
 retuned synth bed is the soundtrack until then.
+
+## 30. M17 build-diversity balance pass (2026-09-07) — six builds, one ladder each
+The official M7 soak runs ONE build (crouton ring+whip) with a hand-tuned
+pick ladder — it proved the tune for a strategy, not for the roster (§22's
+bot pick-strategy tail). M17 adds `test/balance-variants.mjs`: 6 characters
+× 5 seeds, each with its own character-appropriate ladder, official `think()`
+movement copied verbatim, unlock-granted so the shop wall isn't what's tested.
+
+First soak verdicts: 5/6 viable — **Cheese FAIL** (mine kit starves: swarm
+reaches melee before the fuse economy pays; died 5–10min on 5/5 seeds, boss
+med 0), **Avocado weak** (survives on puddle denial, dies at the first boss
+window ~7–9min every seed, boss med 1 — slows, never bursts), **Plunger
+strongest** (5/5 to 20min+, boss med 6 — overtuned).
+
+Tune (character identity, not global numbers):
+- Cheese: `dmgBonus 0.15 / speedBonus 0.10 / armor +1 / hpBonus +40` —
+  tanky+fast outlives the early swarm, dmg gives the fuse boss relevance.
+  (Knob is a MULTIPLIER FRACTION: first write was `15` = +1500% dmg; the
+  soak caught it as a heaven anomaly, m4 caught the intent drift.)
+- Avocado: `armor 1→2 / hpBonus +40 / dmgBonus 0.15` — the body of a tank
+  plus teeth. A puddle baseDmg 12→18 experiment made heaven WORSE
+  (early clear too slow to keep pace) and was rolled back.
+- Plunger: no nerf — accepted as the tank identity; crouton stays the
+  baseline, heaven pacing untouched.
+
+Validation: official baseline 5/5 still green post-tune (deaths 3/10, heaven
+10/10 @7.2min, boss med 6); variants soak 6/6 viable (Cheese now survives
+to the horizon on seed 31415, matching crouton's 2/5); full gate 230/0
+across 7 suites (m4 asserts updated to the M17 statblock).
+Harness bugs fixed en route: `__vbot` → `__bot` (drive crashed v3),
+selectChar-after-restart ordering, run-shape parity with the official gate.

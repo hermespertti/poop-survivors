@@ -136,7 +136,13 @@ const CHARACTERS: Record<string, {
               dmgBonus: 0, speedBonus: 0.15, armor: 0, hpBonus: 0, goldBonus: 0, magnetBonus: 0,
               unlock: 'survive10', unlockDesc: 'survive 10 min' },
   avocado:  { name: 'Avocado',  sprite: 'avocado',  startWeapon: 'puddle',
-              dmgBonus: 0, speedBonus: 0, armor: 1, hpBonus: 0, goldBonus: 0, magnetBonus: 0,
+              // M17 soak: puddle denial keeps XP pace fine (lv 15 by the
+              // first boss) but the body is paper — died at the first boss
+              // window ~7min on every seed, boss med 1. Tank identity gets
+              // the body: +armor, +hp. Second soak pass: armor/hp didn't move
+              // boss med — puddle slows but never bursts; the tank needs
+              // teeth: +15% dmg on the whole kit.
+              dmgBonus: 0.15, speedBonus: 0, armor: 2, hpBonus: 40, goldBonus: 0, magnetBonus: 0,
               unlock: 'kills500', unlockDesc: 'kill 500 enemies' },
   plunger:  { name: 'Plunger',  sprite: 'plunger',  startWeapon: 'spritz',
               dmgBonus: 0, speedBonus: 0, armor: 0, hpBonus: 0, goldBonus: 0, magnetBonus: 0.5,
@@ -145,7 +151,12 @@ const CHARACTERS: Record<string, {
   // them) and is tanky; Onion starts Bouncy Poop (it bounces off things) and
   // greases the gold. goldBonus is wired in recomputeStats (M13).
   cheese:   { name: 'Cheese',   sprite: 'cheese',   startWeapon: 'mine',
-              dmgBonus: 0, speedBonus: 0, armor: 0, hpBonus: 25, goldBonus: 0, magnetBonus: 0,
+              // M17 soak: mine kit starves — swarm reaches melee before the
+              // fuse economy pays off; died 5–10min on 5/5 seeds, boss med 0
+              // (no burst). Give it a tanky
+              // identity: tough + fast so it outlives the early swarm, plus a
+              // small dmg bump so fuse has boss relevance.
+              dmgBonus: 0.15, speedBonus: 0.10, armor: 1, hpBonus: 40, goldBonus: 0, magnetBonus: 0,
               unlock: 'minekill', unlockDesc: 'kill 1000 enemies' },
   onion:    { name: 'Onion',    sprite: 'onion',    startWeapon: 'bouncy',
               dmgBonus: 0, speedBonus: 0, armor: 0, hpBonus: 0, goldBonus: 0.15, magnetBonus: 0,
