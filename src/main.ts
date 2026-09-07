@@ -10,6 +10,18 @@ import { sfx, toggleMute, toggleMusicMute, muted, musicIntensity } from './sfx';
 import { fxKill, fxGem, fxLevelUp, fxEvolve, fxBossKill, fxFlushKill, fxTick, fxDraw, fxState, fxReset } from './fx';
 
 // ---------- deterministic RNG (mulberry32) ----------
+import {
+  TILE, WORLD_W, WORLD_H, VIEW_W, VIEW_H, PLAYER, DT, RUN_LEN, STICK_R,
+  SPIKE_T, SPIKE_EVERY, ITEM_T, META_KEY
+} from './constants';
+import type {
+  Enemy, Gem, Bullet, Zone, Turret, DmgNum, Mode, WState, ItemOpt, Game, Meta, Boss
+} from './types';
+import { WEAPONS, PASSIVES, xpToNext } from './tables/weapons';
+import { CHARACTERS, STAGES, STAGE_IDS, UPGRADES } from './tables/chars';
+import { ENEMY_TYPES, BOSS_SCHEDULE, BOSS_STATS, SCRIPT } from './tables/enemies';
+import { ENEMY_SPR, BOSS_SPR, UNLOCK_LABEL } from './tables/sprites';
+
 function mulberry32(seed: number) {
   let a = seed >>> 0;
   return () => {
@@ -21,100 +33,13 @@ function mulberry32(seed: number) {
 }
 
 // ---------- world / camera ----------
-const TILE = 16;
-const WORLD_W = 1280;
-const WORLD_H = 800;
-const VIEW_W = 320;
-const VIEW_H = 240;
 
 // ---------- player ----------
-const PLAYER = {
-  maxHp: 100, speed: 90, radius: 5,
-  magnetBase: 26, magnetPerLevel: 1.5,
-  invulnAfterHit: 0.8,
-  invulnOnLevel: 1.2,
-};
 
 // ---------- XP curve (VS wiki). req N -> N+1 ----------
-function xpToNext(level: number): number {
-  let base: number;
-  if (level < 20) base = 5 + 10 * (level - 1);
-  else if (level < 40) base = 185 + 13 * (level - 19);
-  else base = 445 + 16 * (level - 39);
-  // M14: smooth the 20/40 milestone walls. Pre-M14 they dumped a flat +600 /
-  // +2400 onto a SINGLE transition — 20->21 = 798 (a 4.3x spike vs the 185
-  // before / 224 after) and 40->41 = 2861 (a 6.4x spike vs 445/477). A normal
-  // kill drip (1-6 XP each) cleared that in a minute, so the bar to 21/41 felt
-  // "very slow exactly at 20/40, normal at 21/41" (playtest round 2, item 2:
-  // "not linear"). The wall is a designed milestone moment (m1 pins the drop),
-  // so keep it as THE single hardest level-up but cap the bump at ~2.5x the
-  // surrounding slope — still clearly a wall, no dry spell.
-  if (level === 20) base = Math.round(base * 2.5); // 198 -> 495 (was 798)
-  if (level === 40) base = Math.round(base * 2.5); // 461 -> 1153 (was 2861)
-  return base;
-}
 
 // ---------- weapons (data table) ----------
 // base dmg/cd, per-level deltas. Slot: 'weapon'. superfart is evolution-only.
-const WEAPONS: Record<string, {
-  name: string; desc: string; maxLvl: number;
-  baseDmg: number; baseCd: number; dmgPerLvl: number; cdPerLvl: number;
-  evolved: boolean;
-  // evolution requirement (base maxed + this passive) → evolved weapon id
-  evoWith?: string; evolvesTo?: string;
-}> = {
-  fartwhip:   { name: 'Fart Whip',    desc: 'Piercing gusts in your facing dir', maxLvl: 8, baseDmg: 10, baseCd: 1.6, dmgPerLvl: 3, cdPerLvl: -0.04, evolved: false, evoWith: 'quick', evolvesTo: 'superfart' },
-  plopcannon: { name: 'Plop Cannon',  desc: 'Heavy aimed gunk blob',             maxLvl: 8, baseDmg: 22, baseCd: 2.4, dmgPerLvl: 8, cdPerLvl: -0.10, evolved: false, evoWith: 'sticky', evolvesTo: 'stickyplop' },
-  crackerring:{ name: 'Cracker Ring', desc: 'Orbiting cracker shards',           maxLvl: 8, baseDmg: 6,  baseCd: 0.22, dmgPerLvl: 1.5, cdPerLvl: -0.004, evolved: false, evoWith: 'widestink', evolvesTo: 'halo' }, // M14: 3→1.5 — playtest round 2 item 3 (AFK-able to ~lvl 40): capped the DPS growth so the ring is defense + chip, not a mid-game solo-clearer (lvl8 27→16.5/tick, 141→86 DPS); halo evo untouched
-  puddle:     { name: 'Puddle',       desc: 'Damaging puddles near you',         maxLvl: 8, baseDmg: 12, baseCd: 3.0, dmgPerLvl: 5, cdPerLvl: -0.06, evolved: false, evoWith: 'meats', evolvesTo: 'slakelake' },
-  bouncy:     { name: 'Bouncy Poop',  desc: 'Bounces between enemies',           maxLvl: 8, baseDmg: 8,  baseCd: 1.2, dmgPerLvl: 4, cdPerLvl: -0.05, evolved: false, evoWith: 'gloves', evolvesTo: 'superball' },
-  stinkaura:  { name: 'Stink Aura',   desc: 'Damages nearby enemies, passive',   maxLvl: 8, baseDmg: 4,  baseCd: 0.5, dmgPerLvl: 2, cdPerLvl: -0.02, evolved: false, evoWith: 'lucky', evolvesTo: 'ghost' },
-  fartbomb:   { name: 'Fart Bomb',    desc: 'Big explosion at a random enemy',   maxLvl: 8, baseDmg: 35, baseCd: 3.5, dmgPerLvl: 10, cdPerLvl: -0.12, evolved: false, evoWith: 'breakfast', evolvesTo: 'bigburp' },
-  turd:       { name: 'Orbiting Turd', desc: 'Heavy orbiting damage zone, slow', maxLvl: 8, baseDmg: 14, baseCd: 1.0, dmgPerLvl: 6, cdPerLvl: -0.03, evolved: false, evoWith: 'slippers', evolvesTo: 'moon' },
-  spritz:     { name: 'Gunk Spritz',  desc: 'Short-range gunk cone',             maxLvl: 8, baseDmg: 9,  baseCd: 1.5, dmgPerLvl: 4, cdPerLvl: -0.03, evolved: false, evoWith: 'tp', evolvesTo: 'gunkfountain' },
-  mine:       { name: 'Gunk Mine',    desc: 'Drops timed mines that blow up',    maxLvl: 8, baseDmg: 26, baseCd: 2.6, dmgPerLvl: 8, cdPerLvl: -0.08, evolved: false, evoWith: 'fuse', evolvesTo: 'minelord' },
-  chainfart:  { name: 'Chain Fart',   desc: 'Zap that chains between enemies',   maxLvl: 8, baseDmg: 14, baseCd: 1.1, dmgPerLvl: 5, cdPerLvl: -0.03, evolved: false, evoWith: 'chain', evolvesTo: 'chainstorm' },
-  gnat:       { name: 'Gnat',         desc: 'A chomping buddy that zaps for you',maxLvl: 8, baseDmg: 10, baseCd: 0.9, dmgPerLvl: 4, cdPerLvl: -0.04, evolved: false, evoWith: 'winged', evolvesTo: 'supergnat' },
-  // ---------- M13: mechanics beyond shoot/orbit/ring ----------
-  turret:     { name: 'Plop Turret',  desc: 'Drops a stationary turret that fires for you', maxLvl: 8, baseDmg: 14, baseCd: 1.0, dmgPerLvl: 5, cdPerLvl: -0.05, evolved: false, evoWith: 'ammo', evolvesTo: 'autoblast' },
-  boomer:     { name: 'Gunk Boomer',  desc: 'Gunk boomerang: goes out, comes back for a 2nd hit', maxLvl: 8, baseDmg: 16, baseCd: 1.8, dmgPerLvl: 5, cdPerLvl: -0.05, evolved: false, evoWith: 'grip', evolvesTo: 'cyclone' },
-  trail:      { name: 'Slime Trail',  desc: 'Leaves a damaging slime trail where you walk', maxLvl: 8, baseDmg: 6, baseCd: 0.18, dmgPerLvl: 2, cdPerLvl: -0.002, evolved: false, evoWith: 'slush', evolvesTo: 'quagmire' },
-  // ---------- evolved weapons (chest-only, evolved: true) ----------
-  superfart:   { name: 'SUPER FART',     desc: 'Wide devastating piercing beam', maxLvl: 8, baseDmg: 40, baseCd: 1.1, dmgPerLvl: 6, cdPerLvl: -0.02, evolved: true },
-  stickyplop:  { name: 'Sticky Plop',    desc: 'Bigger blob, lingers, re-explodes', maxLvl: 8, baseDmg: 30, baseCd: 2.2, dmgPerLvl: 10, cdPerLvl: -0.08, evolved: true },
-  halo:        { name: 'Halo of Crumbs', desc: 'Orbit ring becomes a damaging disc', maxLvl: 8, baseDmg: 10, baseCd: 0.2, dmgPerLvl: 5, cdPerLvl: -0.004, evolved: true },
-  slakelake:   { name: 'Slime Lake',     desc: 'Big slow-zone that drags enemies in', maxLvl: 8, baseDmg: 20, baseCd: 2.5, dmgPerLvl: 8, cdPerLvl: -0.05, evolved: true },
-  superball:   { name: 'Superball Splat', desc: '3 superballs, huge bounce range', maxLvl: 8, baseDmg: 16, baseCd: 0.9, dmgPerLvl: 8, cdPerLvl: -0.04, evolved: true },
-  ghost:       { name: 'Ghost of Last Night', desc: 'Orbiting ghost that bites + auras', maxLvl: 8, baseDmg: 8, baseCd: 0.4, dmgPerLvl: 4, cdPerLvl: -0.02, evolved: true },
-  bigburp:     { name: 'BIG BURP',       desc: 'Massive multi-target AOE', maxLvl: 8, baseDmg: 55, baseCd: 2.8, dmgPerLvl: 14, cdPerLvl: -0.1, evolved: true },
-  moon:        { name: 'MOON OF THE BOWEL', desc: 'A full moon of doom circles you', maxLvl: 8, baseDmg: 24, baseCd: 0.8, dmgPerLvl: 10, cdPerLvl: -0.02, evolved: true },
-  gunkfountain:{ name: 'GUNK FOUNTAIN',  desc: 'Radial gunk geyser + splash zone', maxLvl: 8, baseDmg: 12, baseCd: 1.2, dmgPerLvl: 5, cdPerLvl: -0.03, evolved: true },
-  minelord:    { name: 'MINE LORD',      desc: 'Rains a field of fast-fusing mines', maxLvl: 8, baseDmg: 40, baseCd: 1.8, dmgPerLvl: 12, cdPerLvl: -0.05, evolved: true },
-  chainstorm:  { name: 'CHAIN STORM',    desc: 'Lightning storms over the field', maxLvl: 8, baseDmg: 22, baseCd: 0.7, dmgPerLvl: 8, cdPerLvl: -0.02, evolved: true },
-  supergnat:   { name: 'SUPER GNAT',     desc: 'A furious swarm that zaps nonstop', maxLvl: 8, baseDmg: 16, baseCd: 0.5, dmgPerLvl: 6, cdPerLvl: -0.02, evolved: true },
-  // ---------- M13 evolutions ----------
-  autoblast:   { name: 'AUTOBLAST',      desc: 'Turret fires a fast 3-way plop spread', maxLvl: 8, baseDmg: 12, baseCd: 0.5, dmgPerLvl: 4, cdPerLvl: -0.02, evolved: true },
-  cyclone:     { name: 'CYCLONE',        desc: '3 gunk boomerangs, each rebounds again', maxLvl: 8, baseDmg: 14, baseCd: 1.4, dmgPerLvl: 4, cdPerLvl: -0.03, evolved: true },
-  quagmire:    { name: 'QUAGMIRE',       desc: 'A wide choking muck that trails and lingers', maxLvl: 8, baseDmg: 10, baseCd: 0.15, dmgPerLvl: 3, cdPerLvl: -0.002, evolved: true },
-};
-const PASSIVES: Record<string, { name: string; desc: string; maxLvl: number }> = {
-  meats:      { name: 'Meat Shakes',    desc: '+10% weapon damage / lv', maxLvl: 5 },
-  quick:      { name: 'Quick Hands',    desc: '-8% weapon cooldown / lv', maxLvl: 5 },
-  slippers:   { name: 'Slippers',       desc: '+10% move speed / lv', maxLvl: 5 },
-  tp:         { name: 'TP Crown',       desc: '+8% XP gain / lv', maxLvl: 5 },
-  breakfast:  { name: 'Big Breakfast',  desc: '+25 max HP / lv (max 3)', maxLvl: 3 },
-  gloves:     { name: 'Gloves',         desc: '+10% projectile speed / lv', maxLvl: 5 },
-  widestink:  { name: 'Wide Stink',     desc: '+10% weapon area / lv', maxLvl: 5 },
-  sticky:     { name: 'Sticky',         desc: '+10% duration / lv', maxLvl: 5 },
-  lucky:      { name: 'Lucky Charms',   desc: '+10% luck / lv (evolution unlocks)', maxLvl: 5 },
-  goldrush:   { name: 'Gold Rush',      desc: '+15% gold / lv (M7)', maxLvl: 5 },
-  fuse:       { name: 'Fuse',           desc: '+20% mine blast radius / lv (M8)', maxLvl: 5 },
-  chain:      { name: 'Chain',          desc: '+1 chain hop / lv (M8)', maxLvl: 5 },
-  winged:     { name: 'Winged',       desc: '+1 gnat zap +speed / lv (M8)', maxLvl: 5 },
-  ammo:       { name: 'Extra Ammo',   desc: '+1 turret plop / lv (M13)', maxLvl: 3 },
-  grip:       { name: 'Boomer Grip',  desc: 'Boomer +range +1 rebound / lv (M13)', maxLvl: 3 },
-  slush:      { name: 'Slush Pails',  desc: '+20% slime trail width / lv (M13)', maxLvl: 3 },
-};
 
 function wDmg(id: string, lvl: number): number { return (WEAPONS[id].baseDmg + WEAPONS[id].dmgPerLvl * (lvl - 1)) * G.stats.dmgMult; }
 function wCd(id: string, lvl: number): number { return Math.max(0.15, (WEAPONS[id].baseCd + WEAPONS[id].cdPerLvl * (lvl - 1)) * G.stats.cdMult); }
@@ -124,51 +49,8 @@ function wArea(v: number): number { return v * G.stats.areaMult; }
 function wDuration(v: number): number { return v * G.stats.durationMult; }
 
 // ---------- characters (M4) ----------
-const CHARACTERS: Record<string, {
-  name: string; sprite: string; startWeapon: string;
-  dmgBonus: number; speedBonus: number; armor: number; hpBonus: number; goldBonus: number; magnetBonus: number;
-  unlock: string; unlockDesc: string;
-}> = {
-  crouton:  { name: 'Crouton',  sprite: 'crouton',  startWeapon: 'fartwhip',
-              dmgBonus: 0.10, speedBonus: 0, armor: 0, hpBonus: 0, goldBonus: 0, magnetBonus: 0,
-              unlock: 'default', unlockDesc: 'default' },
-  hotdog:   { name: 'Hot Dog',  sprite: 'hotdog',   startWeapon: 'plopcannon',
-              dmgBonus: 0, speedBonus: 0.15, armor: 0, hpBonus: 0, goldBonus: 0, magnetBonus: 0,
-              unlock: 'survive10', unlockDesc: 'survive 10 min' },
-  avocado:  { name: 'Avocado',  sprite: 'avocado',  startWeapon: 'puddle',
-              // M17 soak: puddle denial keeps XP pace fine (lv 15 by the
-              // first boss) but the body is paper — died at the first boss
-              // window ~7min on every seed, boss med 1. Tank identity gets
-              // the body: +armor, +hp. Second soak pass: armor/hp didn't move
-              // boss med — puddle slows but never bursts; the tank needs
-              // teeth: +15% dmg on the whole kit.
-              dmgBonus: 0.15, speedBonus: 0, armor: 2, hpBonus: 40, goldBonus: 0, magnetBonus: 0,
-              unlock: 'kills500', unlockDesc: 'kill 500 enemies' },
-  plunger:  { name: 'Plunger',  sprite: 'plunger',  startWeapon: 'spritz',
-              dmgBonus: 0, speedBonus: 0, armor: 0, hpBonus: 0, goldBonus: 0, magnetBonus: 0.5,
-              unlock: 'boss3', unlockDesc: 'kill 3 bosses' },
-  // M13: two more characters. Cheese starts Gunk Mine (its holes are full of
-  // them) and is tanky; Onion starts Bouncy Poop (it bounces off things) and
-  // greases the gold. goldBonus is wired in recomputeStats (M13).
-  cheese:   { name: 'Cheese',   sprite: 'cheese',   startWeapon: 'mine',
-              // M17 soak: mine kit starves — swarm reaches melee before the
-              // fuse economy pays off; died 5–10min on 5/5 seeds, boss med 0
-              // (no burst). Give it a tanky
-              // identity: tough + fast so it outlives the early swarm, plus a
-              // small dmg bump so fuse has boss relevance.
-              dmgBonus: 0.15, speedBonus: 0.10, armor: 1, hpBonus: 40, goldBonus: 0, magnetBonus: 0,
-              unlock: 'minekill', unlockDesc: 'kill 1000 enemies' },
-  onion:    { name: 'Onion',    sprite: 'onion',    startWeapon: 'bouncy',
-              dmgBonus: 0, speedBonus: 0, armor: 0, hpBonus: 0, goldBonus: 0.15, magnetBonus: 0,
-              unlock: 'goldrun', unlockDesc: 'collect 400 gold in one run' },
-};
 
 // ---------- enemies (M3 roster, M7 extensions, M13 heavy/KB-resistant) ----------
-type Enemy = {
-  x: number; z: number; hp: number; maxHp: number; speed: number; dmg: number;
-  radius: number; xp: number; kind: string; hitT: number; wob: number;
-  kbx: number; kbz: number; spitCd?: number; kbResist?: number;
-};
 // enemy archetype data table (per the GDD director script)
 // bubble: chaser. droplet: fast thin. crumb: tanky slow. mop: swarmer (weak,
 // many). stink: slow heavy cloud. sponge: shielded (takes half damage).
@@ -176,21 +58,6 @@ type Enemy = {
 // ranged — holds its distance band and lobs gunk shots.
 // boulder (M13): heavy armored lump — high HP, shrugs off knockback.
 // shell (M13): spiked shell — medium HP, shrugs off knockback.
-const ENEMY_TYPES: Record<string, {
-  hp: number; speed: number; dmg: number; radius: number; xp: number; kbResist?: number;
-}> = {
-  bubble:  { hp: 6,  speed: 34, dmg: 8,  radius: 5, xp: 1 },
-  droplet: { hp: 4,  speed: 52, dmg: 6,  radius: 4, xp: 1 },
-  crumb:   { hp: 30, speed: 20, dmg: 12, radius: 6, xp: 3 },
-  mop:     { hp: 3,  speed: 40, dmg: 5,  radius: 4, xp: 1 },
-  stink:   { hp: 60, speed: 16, dmg: 16, radius: 7, xp: 5 },
-  sponge:  { hp: 40, speed: 24, dmg: 10, radius: 5, xp: 4 },
-  splitter:{ hp: 26, speed: 22, dmg: 10, radius: 7, xp: 3 },
-  spitter: { hp: 18, speed: 18, dmg: 8,  radius: 6, xp: 3 },
-  // M13: kbResist = fraction of knockback ignored (0.7 = shrugs off 70%)
-  boulder: { hp: 80, speed: 15, dmg: 16, radius: 8, xp: 6, kbResist: 0.75 },
-  shell:   { hp: 36, speed: 26, dmg: 12, radius: 7, xp: 4, kbResist: 0.6 },
-};
 // spawn-time HP scaling (VS: enemies get tankier over the run)
 function enemyHp(kind: string): number {
   const base = ENEMY_TYPES[kind].hp;
@@ -209,54 +76,12 @@ function enemyHp(kind: string): number {
 // feels lethal. Applied at every enemy->player hit site (contact, boss,
 // flush, enemy bullet) before armor subtraction.
 function eDmg(base: number): number { return base * (1 + G.time / 6000); }
-type Gem = { x: number; z: number; val: number; vx: number; vz: number; pulled: boolean };
-type Bullet = { x: number; z: number; vx: number; vz: number; life: number; dmg: number; ang: number; hitR: number; kind: string; bounces?: number; bounceSpeed?: number; linger?: number; hitIds?: number[]; enemy?: boolean; visual?: boolean; blast?: number; dir?: number; returnHits?: number };
-type Zone = { x: number; z: number; r: number; life: number; tick: number; dmg: number; tint?: string; drag?: number };
 // M13: a dropped Plop Turret — stationary, fires for you on its own cadence.
-type Turret = { x: number; z: number; cd: number; life: number; dmg: number; angle: number; rate: number; spread: number };
-type DmgNum = { x: number; z: number; vy: number; t: number; txt: string; crit: boolean };
-type Mode = 'title' | 'play' | 'levelup' | 'dead' | 'win';
-type WState = { lvl: number; cd: number; ang: number };
-type ItemOpt = { kind: 'weapon' | 'passive' | 'gold' | 'hp'; id: string; name: string; desc: string; lvl: number };
 
-type Game = {
-  seed: number; rng: () => number;
-  mode: Mode; time: number;
-  player: { x: number; z: number; hp: number; face: number; moving: boolean; invuln: number; walkT: number };
-  enemies: Enemy[]; gems: Gem[]; bullets: Bullet[]; zones: Zone[]; dmgNums: DmgNum[]; items: Item[];
-  xp: number; level: number; xpNeed: number; gold: number;
-  weapons: Record<string, WState>;
-  passives: Record<string, number>;
-  boss: Boss | null; chest: { x: number; z: number } | null;
-  bossIdx: number;
-  flush: { x: number; z: number; hp: number; maxHp: number; speed: number; dmg: number; radius: number; hitT: number; wob: number } | null;
-  flushResolved: boolean; flushed: boolean;
-  wall: Enemy[];
-  options: ItemOpt[];
-  flashT: number; shake: number; evolutionT: number; evolved: boolean;
-  kills: number; bossKilled: number;
-  stats: {
-    maxLevel: number; levelUps: number; gems: number; nan: number;
-    shots: Record<string, number>; kbApplied: number; chestTaken: number; itemTaken: number;
-    dmgMult: number; cdMult: number; speedMult: number; xpMult: number;
-    projSpeedMult: number; areaMult: number; durationMult: number; maxHp: number;
-    goldMult: number;
-    turretCap: number; // M13: max dropped turrets (1 + Extra Ammo levels, capped 3)
-    boomerMult: number; // M13: Gunk Boomer range (1 + Grip levels)
-    trailMult: number; // M13: Slime Trail width (1 + Slush Pails levels)
-  };
-  spawnCd: number; spawnInterval: number; waveIdx: number; itemIdx: number;
-  char: string; stage: string; armor: number;
-  turrets: Turret[]; // M13: dropped Plop Turrets (stationary, fire for you)
-  trailT: number; // M13: Slime Trail drop cadence
-  trailX: number; trailZ: number; // M13: last position the trail was dropped at
-};
 
 // ---------- meta (M4): gold + unlocks persist across runs (localStorage) ----------
-const META_KEY = 'poop-survivors-meta';
 // M11: upgrades = persistent gold-shop levels (the pre-M11 loop banked gold
 // and never spent it — the meta wallet was a counter, not a progression).
-type Meta = { gold: number; unlocked: string[]; achievements: string[]; bestTime: number; bestKills: number; upgrades: Record<string, number> };
 function loadMeta(): Meta {
   try {
     const raw = localStorage.getItem(META_KEY);
@@ -270,14 +95,8 @@ function saveMeta(m: Meta): void {
 let META: Meta = loadMeta();
 // stage selection: 'kitchen' (default), 'bathroom' (survive a run),
 // 'compost' (M13: beat the Lint King once — the final stage)
-const STAGES: Record<string, { name: string; unlock: string; tileA: string; tileB: string; accent: string; detail: number; scriptShift: number }> = {
-  kitchen:  { name: 'The Kitchen',   unlock: 'default',  tileA: '#f3e2b8', tileB: '#e8cf94', accent: '#c9a35e', detail: 3,   scriptShift: 0 },
-  bathroom: { name: 'The Bathroom',  unlock: 'survive5', tileA: '#cfe8f6', tileB: '#a5cde6', accent: '#7fb3cf', detail: 1,   scriptShift: 60 },
-  compost:  { name: 'The Compost',   unlock: 'lintking', tileA: '#7a6a3f', tileB: '#655733', accent: '#4a3f24', detail: 2,   scriptShift: 120 },
-};
 // M13: ordered id list — the title selector and tap handler cycle through all
 // of these (pre-M13 it was a 2-way kitchen/bathroom toggle).
-const STAGE_IDS = ['kitchen', 'bathroom', 'compost'];
 function cycleStage(): void {
   // advance to the next UNLOCKED stage (wrap). Repeats on the same one only
   // if it's the sole unlocked stage (kitchen-only new save).
@@ -299,12 +118,6 @@ let newBestTime = false;
 // (via recomputeStats, so in-run passives can't wipe it). Costs stack
 // base*(lvl+1) so the late game slows. A decent run banks ~300-800, so the
 // first level is 1-2 runs of play.
-const UPGRADES: { id: string; name: string; desc: string; price: number; max: number }[] = [
-  { id: 'hp',   name: 'IRON STOMACH', desc: '+15 max HP each',   price: 250, max: 5 },
-  { id: 'dmg',  name: 'MEAT LOADER',  desc: '+10% damage each',  price: 300, max: 5 },
-  { id: 'xp',   name: 'FAST DIGEST',  desc: '+10% XP each',      price: 200, max: 5 },
-  { id: 'gold', name: 'GOLD RUSH',    desc: '+10% gold each',    price: 200, max: 5 },
-];
 let shopOpen = false;
 let shopSel = 0;
 function upLvl(id: string): number { return META.upgrades[id] || 0; }
@@ -399,7 +212,6 @@ const COARSE = matchMedia('(pointer: coarse)').matches || 'ontouchstart' in wind
 let pointerHeld = false;
 let pointerWorld: { x: number; z: number } | null = null;
 let stick = { active: false, id: -1, bx: 0, bz: 0, x: 0, z: 0 };
-const STICK_R = 40; // view units — full-stick throw
 const canvasEl = (document.getElementById('c') as HTMLCanvasElement);
 function clientToView(cx: number, cy: number): { x: number; z: number } {
   const r = canvasEl.getBoundingClientRect();
@@ -1050,30 +862,7 @@ function fireWeapons(): void {
 // ---------- bosses (M3 schedule) ----------
 // 5 bosses on the script + THE FINAL FLUSH at 30:00. Each boss has its own
 // behavior; killing one drops a chest (10:00+ chests are evolution-grade).
-const BOSS_SCHEDULE: Array<{ t: number; name: string; kind: string }> = [
-  { t: 300,   name: 'THE FIRST WIND',      kind: 'wind' },
-  { t: 600,   name: 'COLONEL C',           kind: 'colonel' },
-  { t: 900,   name: 'THE CONSTIPATION',    kind: 'constipation' },
-  { t: 1200,  name: 'THE DIARRHEA EXPRESS', kind: 'express' },
-  { t: 1500,  name: 'MR. SPHINCTER',       kind: 'sphincter' },
-  { t: 1650,  name: 'THE LINT KING',       kind: 'lintking' }, // M7: the penultimate horror
-];
-type Boss = {
-  x: number; z: number; hp: number; maxHp: number; speed: number; dmg: number;
-  radius: number; hitT: number; minionCd: number; wob: number;
-  kind: string; name: string; phase2: boolean; chargeCd: number; dashT: number;
-  aimT: number; lockAng: number;
-};
 // boss behavior data per kind
-const BOSS_STATS: Record<string, { hp: number; speed: number; dmg: number; radius: number }> = {
-  wind:         { hp: 500,  speed: 26, dmg: 12, radius: 11 },
-  colonel:      { hp: 1200, speed: 22, dmg: 14, radius: 12 },
-  constipation: { hp: 2000, speed: 14, dmg: 16, radius: 13 },
-  express:      { hp: 1400, speed: 55, dmg: 14, radius: 10 },
-  sphincter:    { hp: 2600, speed: 20, dmg: 18, radius: 13 },
-  lintking:     { hp: 1800, speed: 24, dmg: 13, radius: 12 }, // M7; M12: 2200→1800 HP, 16→13 contact (see GDD §25)
-  flush:        { hp: 1200, speed: 30, dmg: 30, radius: 14 },
-};
 function spawnBoss(kind: string, name: string): void {
   const st = BOSS_STATS[kind];
   const ang = G.rng() * Math.PI * 2;
@@ -1177,22 +966,7 @@ function resolveChest(): void {
 // script, not a sim). Enemy types unlock on schedule; density scales on script;
 // wave bursts repeat. spawnEnemy(kind) is the single entry point.
 // script: [time, kind, weight] — weight = share of spawns while active
-const SCRIPT: Array<{ t: number; kind: string; weight: number }> = [
-  { t: 0,     kind: 'bubble',  weight: 1.0 },
-  { t: 60,    kind: 'droplet', weight: 0.5 },
-  { t: 120,   kind: 'crumb',   weight: 0.4 },
-  { t: 420,   kind: 'mop',     weight: 0.6 },
-  { t: 720,   kind: 'stink',   weight: 0.35 },
-  { t: 1020,  kind: 'sponge',  weight: 0.3 },
-  { t: 1320,  kind: 'splitter', weight: 0.4 }, // M7: 22:00
-  { t: 1620,  kind: 'spitter',  weight: 0.4 }, // M7: 27:00
-  // M13: the heavy/KB-resistant join the late gauntlet
-  { t: 1140,  kind: 'shell',    weight: 0.35 }, // 19:00
-  { t: 1500,  kind: 'boulder',  weight: 0.3 },  // 25:00
-];
 // density spikes (30s of extra spawns): first at 12:00, repeats every 2 min
-const SPIKE_T = 720; // 12:00
-const SPIKE_EVERY = 120; // every 2 min after
 // active kinds at time T (all kinds whose unlock time has passed).
 // STAGE VARIANT (M7): the bathroom shifts the whole script 60s EARLIER —
 // the same run, but the kitchen's 1:00 pressure hits you at 0:00. That is
@@ -1254,8 +1028,6 @@ function spawnSpasmWall(): void {
 }
 
 // stage items (M3): gold bags + donuts drop on a schedule, walk over to collect
-type Item = { x: number; z: number; kind: 'gold' | 'heal' };
-const ITEM_T = 150; // first item at 2:30, every 2.5 min after
 function spawnItem(): void {
   const p = G.player;
   const ang = G.rng() * Math.PI * 2;
@@ -1280,8 +1052,6 @@ function checkLevelUp(): void {
 }
 
 // ---------- main update ----------
-const DT = 1 / 60;
-const RUN_LEN = 1800; // 30:00 — the full director run (M3)
 let orbitPos: { x: number; z: number; r: number } | null = null;
 let orbit2Pos: { x: number; z: number; r: number } | null = null;
 let gnatPos: { x: number; z: number } | null = null; // M8: gnat companion
@@ -1777,30 +1547,10 @@ function camX(): number { return Math.max(0, Math.min(WORLD_W - VIEW_W, G.player
 function camY(): number { return Math.max(0, Math.min(WORLD_H - VIEW_H, G.player.z - VIEW_H / 2)); }
 
 // sprite pickers for the M3 roster
-const ENEMY_SPR: Record<string, { spr: string; hit: string }> = {
-  bubble: { spr: 'bubble', hit: 'bubbleHit' },
-  droplet: { spr: 'droplet', hit: 'droplet' }, // single frame — no hit variant authored
-  crumb: { spr: 'crumb', hit: 'crumbHit' },
-  mop: { spr: 'mop', hit: 'mopHit' },
-  stink: { spr: 'stink', hit: 'stinkHit' },
-  sponge: { spr: 'sponge', hit: 'spongeHit' },
-  splitter: { spr: 'splitter', hit: 'splitterHit' }, // M7
-  spitter: { spr: 'spitter', hit: 'spitterHit' }, // M7
-  boulder: { spr: 'boulder', hit: 'boulderHit' }, // M13
-  shell: { spr: 'shell', hit: 'shellHit' }, // M13
-};
 function enemySprite(kind: string, hit: boolean): any {
   const e = ENEMY_SPR[kind] || ENEMY_SPR.bubble;
   return SPRITES[hit ? e.hit : e.spr];
 }
-const BOSS_SPR: Record<string, { spr: string; hit: string }> = {
-  wind: { spr: 'boss', hit: 'bossHit' },
-  colonel: { spr: 'colonel', hit: 'colonelHit' },
-  constipation: { spr: 'constipation', hit: 'constipationHit' },
-  express: { spr: 'express', hit: 'expressHit' },
-  sphincter: { spr: 'sphincter', hit: 'sphincterHit' },
-  lintking: { spr: 'lintking', hit: 'lintkingHit' }, // M7
-};
 function bossSprite(kind: string): { spr: any; hit: any } {
   const e = BOSS_SPR[kind] || BOSS_SPR.wind;
   return { spr: SPRITES[e.spr], hit: SPRITES[e.hit] };
@@ -2108,11 +1858,6 @@ function overlay(title: string, sub1: string, sub2: string, t: number, dark: boo
 // M11 unlock id → what it unlocked (the reward the run earned). Shown on the
 // end screen so a player who dies at 10:30 sees "NEW: Hot Dog" instead of a
 // silent unlock in the localStorage.
-const UNLOCK_LABEL: Record<string, string> = {
-  survive5: 'THE BATHROOM', survive10: 'HOT DOG', kills500: 'AVOCADO', boss3: 'PLUNGER',
-  minekill: 'CHEESE', goldrun: 'ONION', // M13
-  compost: 'THE COMPOST', // M13
-};
 function drawEndScreen(t: number, won: boolean, flushed: boolean): void {
   ctx.fillStyle = won ? 'rgba(30,22,10,0.72)' : 'rgba(20,10,6,0.84)';
   ctx.fillRect(0, 0, VIEW_W, VIEW_H);
