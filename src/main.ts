@@ -23,6 +23,7 @@ import { ENEMY_TYPES, BOSS_SCHEDULE, BOSS_STATS, SCRIPT } from './tables/enemies
 import { ENEMY_SPR, BOSS_SPR, UNLOCK_LABEL } from './tables/sprites';
 import { mulberry32 } from './rng';
 import { META, saveMeta, resetMeta } from './meta';
+import { enemySprite, bossSprite } from './sprites';
 
 
 function wDmg(id: string, lvl: number): number { return (WEAPONS[id].baseDmg + WEAPONS[id].dmgPerLvl * (lvl - 1)) * G.stats.dmgMult; }
@@ -1512,15 +1513,6 @@ fitCanvas();
 function camX(): number { return Math.max(0, Math.min(WORLD_W - VIEW_W, G.player.x - VIEW_W / 2)); }
 function camY(): number { return Math.max(0, Math.min(WORLD_H - VIEW_H, G.player.z - VIEW_H / 2)); }
 
-// sprite pickers for the M3 roster
-function enemySprite(kind: string, hit: boolean): any {
-  const e = ENEMY_SPR[kind] || ENEMY_SPR.bubble;
-  return SPRITES[hit ? e.hit : e.spr];
-}
-function bossSprite(kind: string): { spr: any; hit: any } {
-  const e = BOSS_SPR[kind] || BOSS_SPR.wind;
-  return { spr: SPRITES[e.spr], hit: SPRITES[e.hit] };
-}
 
 let camFXx = 0, camFXy = 0; // M15: the last render's camera — fxDraw rides it
 function render(t: number): void {
