@@ -66,6 +66,50 @@ for (const id of ['fartwhip', 'plopcannon', 'crackerring', 'puddle', 'bouncy', '
   }, id);
   ok(r > 0, `weapon ${id} fires`);
 }
+// B1b: EVOLVED weapons fire too (M18: halo + slakelake were registered in
+// WEAPONS but had no fire branch — chests granting them silently DISARMED
+// the player, invisible to the base-weapon-only probe above).
+for (const id of ['superfart', 'stickyplop', 'halo', 'slakelake', 'superball', 'ghost', 'bigburp', 'moon', 'gunkfountain', 'minelord', 'chainstorm', 'supergnat', 'autoblast', 'cyclone', 'quagmire']) {
+  const r = await page.evaluate((wid) => {
+    const c = window.__cap;
+    c.restartPlay(556); c.freeze();
+    c.giveWeapon(wid, 1); c.giveWeapon('fartwhip', 1);
+    c.spawn(3);
+    const st = c.state();
+    for (let i = 0; i < 3; i++) c.setEnemyPos(i, st.x + 20, st.z);
+    if (wid === 'quagmire') c.move(1, 0);
+    let shots = 0;
+    for (let i = 0; i < 240; i++) { c.step(); const s = c.state(); shots = s.stats.shots[wid] || 0; if (shots > 0) break; }
+    return shots;
+  }, id);
+  ok(r > 0, `evolved weapon ${id} fires`);
+}
+// B1c: Slime Lake drags (M18): the lake lands on enemy 0 (its center is
+// there — drag skips the center), so enemy 1 sits at the lake rim and must
+// get pulled toward the center across damage ticks.
+const lakeDrag = await page.evaluate(() => {
+  const c = window.__cap;
+  c.restartPlay(557); c.freeze();
+  c.giveWeapon('slakelake', 1);
+  c.spawn(2);
+  const st = c.state();
+  c.setEnemyPos(0, st.x + 90, st.z); // lake anchor
+  c.setEnemyPos(1, st.x + 90 + 55, st.z); // rim, dragged inward
+  c.setEnemyHp(1, 100000); // keep the rim enemy alive through the ticks
+  let fired = false, lake = null;
+  for (let i = 0; i < 240 && !fired; i++) { c.step(); fired = (c.state().stats.shots['slakelake'] || 0) > 0; }
+  if (!fired) return { fired: false };
+  const zs = c.zones().filter((z) => z.drag > 0);
+  lake = zs[0] || null;
+  if (!lake) return { fired: true, lake: null };
+  for (let i = 0; i < 90; i++) c.step(); // ≥2 damage ticks
+  const rimAfter = c.enemies(8).filter((e) => Math.abs(e.z - lake.z) < 8).sort((a, b) => a.d - b.d);
+  const after0 = rimAfter.length ? Math.hypot(rimAfter[0].x - lake.x, rimAfter[0].z - lake.z) : NaN;
+  return { fired: true, lake: true, rimBefore: 55, after0 };
+});
+ok(lakeDrag.fired, 'slakelake fired in the drag probe');
+ok(!!lakeDrag.lake, 'slakelake zones carry a drag force');
+ok(lakeDrag.after0 < lakeDrag.rimBefore - 5, `rim enemy dragged toward the lake center (${lakeDrag.rimBefore} → ${(lakeDrag.after0 || 0).toFixed ? lakeDrag.after0.toFixed(1) : lakeDrag.after0})`);
 // B2: all 9 passives scale
 const passiveProbe = await page.evaluate(() => {
   const c = window.__cap;

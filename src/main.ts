@@ -211,7 +211,7 @@ function enemyHp(kind: string): number {
 function eDmg(base: number): number { return base * (1 + G.time / 6000); }
 type Gem = { x: number; z: number; val: number; vx: number; vz: number; pulled: boolean };
 type Bullet = { x: number; z: number; vx: number; vz: number; life: number; dmg: number; ang: number; hitR: number; kind: string; bounces?: number; bounceSpeed?: number; linger?: number; hitIds?: number[]; enemy?: boolean; visual?: boolean; blast?: number; dir?: number; returnHits?: number };
-type Zone = { x: number; z: number; r: number; life: number; tick: number; dmg: number; tint?: string };
+type Zone = { x: number; z: number; r: number; life: number; tick: number; dmg: number; tint?: string; drag?: number };
 // M13: a dropped Plop Turret — stationary, fires for you on its own cadence.
 type Turret = { x: number; z: number; cd: number; life: number; dmg: number; angle: number; rate: number; spread: number };
 type DmgNum = { x: number; z: number; vy: number; t: number; txt: string; crit: boolean };
@@ -786,12 +786,53 @@ function fireWeapons(): void {
       }
       continue;
     }
+    if (id === 'halo') {
+      // M18: the ring evolution was REGISTERED but never FIRED (same class of
+      // dead-code bug as slakelake) — an early chest that gave Halo silently
+      // disarmed the ring owner. Halo: full disc, not a band — everything
+      // inside the radius gets ticked, the shards keep spinning as the skin.
+      const spd = 2.0 + 0.15 * (w.lvl - 1);
+      w.ang += spd * DT;
+      const r = wArea(34 + 2 * w.lvl);
+      if (w.cd <= 0) {
+        w.cd = wCd('halo', w.lvl);
+        G.stats.shots['halo'] = (G.stats.shots['halo'] || 0) + 1;
+        const dmg = wDmg('halo', w.lvl);
+        for (const e of G.enemies) {
+          if (Math.hypot(e.x - p.x, e.z - p.z) < r + e.radius) damageEnemy(e, dmg, p.x, p.z);
+        }
+        for (let wi = G.wall.length - 1; wi >= 0; wi--) {
+          const e = G.wall[wi];
+          if (Math.hypot(e.x - p.x, e.z - p.z) < r + e.radius) damageWall(e, dmg, p.x, p.z, wi);
+        }
+        if (G.boss && Math.hypot(G.boss.x - p.x, G.boss.z - p.z) < r + G.boss.radius) hitBoss(dmg, p.x, p.z);
+        if (G.flush && Math.hypot(G.flush.x - p.x, G.flush.z - p.z) < r + G.flush.radius) hitFlush(dmg, p.x, p.z);
+      }
+      orbitPos = { x: p.x + Math.cos(w.ang) * r, z: p.z + Math.sin(w.ang) * r, r: r + 6 };
+      continue;
+    }
     if (id === 'puddle') {
       if (w.cd <= 0) {
         w.cd = wCd('puddle', w.lvl);
         G.stats.shots['puddle'] = (G.stats.shots['puddle'] || 0) + 1;
         const a = G.rng() * Math.PI * 2, d = 20 + G.rng() * 50;
         G.zones.push({ x: p.x + Math.cos(a) * d, z: p.z + Math.sin(a) * d, r: 30 + 6 * w.lvl, life: 4, tick: 0.5, dmg: wDmg('puddle', w.lvl) });
+      }
+      continue;
+    }
+    if (id === 'slakelake') {
+      // M18: the puddle evolution was REGISTERED but never FIRED — a chest
+      // that gave Slime Lake silently disarmed the player (the real reason
+      // avocado's boss med was 1: no weapon after the chest, not weak
+      // numbers). Big lake at the nearest enemy: ticks hard AND drags
+      // everything inside toward its center (VS Black Hole crowd control).
+      if (w.cd <= 0) {
+        const t = nearestEnemy(320);
+        w.cd = wCd('slakelake', w.lvl);
+        G.stats.shots['slakelake'] = (G.stats.shots['slakelake'] || 0) + 1;
+        sfx('shoot');
+        const tx = t ? t.e.x : p.x, tz = t ? t.e.z : p.z;
+        G.zones.push({ x: tx, z: tz, r: wArea(55 + 5 * w.lvl), life: wDuration(3.5), tick: 0.4, dmg: wDmg('slakelake', w.lvl), tint: '#2f7f3f', drag: 55 + 6 * w.lvl });
       }
       continue;
     }
@@ -1406,7 +1447,17 @@ function update(): void {
       zn.tick = 0.5;
       for (let ei = G.enemies.length - 1; ei >= 0; ei--) {
         const e = G.enemies[ei];
-        if (Math.hypot(e.x - zn.x, e.z - zn.z) < zn.r + e.radius) damageEnemy(e, zn.dmg, zn.x, zn.z);
+        const edx = zn.x - e.x, edz = zn.z - e.z;
+        const ed = Math.hypot(edx, edz);
+        if (ed < zn.r + e.radius) {
+          damageEnemy(e, zn.dmg, zn.x, zn.z);
+          // M18 Slime Lake drag: suck everything inside toward the center
+          // (heavy enemies resist it like they resist knockback).
+          if (zn.drag && ed > 4) {
+            const pull = zn.drag * (1 - (e.kbResist || 0)) * zn.tick;
+            e.x += (edx / ed) * pull; e.z += (edz / ed) * pull;
+          }
+        }
       }
       for (let wi = G.wall.length - 1; wi >= 0; wi--) {
         const e = G.wall[wi];
@@ -2330,6 +2381,8 @@ const win = window;
       .map((b) => ({ x: b.x, z: b.z, vx: b.vx, vz: b.vz, d: Math.hypot(b.x - G.player.x, b.z - G.player.z) }))
       .sort((a, b) => a.d - b.d).slice(0, n);
   },
+  // M18: active damage zones (the Slime Lake drag assertion reads drag from here)
+  zones: () => G.zones.map((z) => ({ x: +z.x.toFixed(1), z: +z.z.toFixed(1), r: +z.r.toFixed(1), drag: z.drag || 0 })),
   enemies: (n = 8) => {
     const arr = G.enemies.map((e) => ({ x: e.x, z: e.z, hp: +e.hp.toFixed(1), d: Math.hypot(e.x - G.player.x, e.z - G.player.z), kx: +e.kbx.toFixed(1), kz: +e.kbz.toFixed(1) })).sort((a, b) => a.d - b.d).slice(0, n);
     return arr;

@@ -1062,3 +1062,28 @@ to the horizon on seed 31415, matching crouton's 2/5); full gate 230/0
 across 7 suites (m4 asserts updated to the M17 statblock).
 Harness bugs fixed en route: `__vbot` → `__bot` (drive crashed v3),
 selectChar-after-restart ordering, run-shape parity with the official gate.
+
+## 31. M18 dead-evolution fix (2026-09-07) — chests that disarmed you
+M17's avocado verdict ("slows, never bursts") had a deeper root cause:
+`slakelake` and `halo` were REGISTERED in WEAPONS with full stats — but
+`fireWeapons()` had no branch for either. A chest resolving puddle→slakelake
+(or ring→halo) deleted the working weapon and granted a NON-WEAPON: the
+player was silently disarmed for the rest of the run. Invisible to every
+prior probe (B1 only tested base weapons; the m4 evolution test asserted
+`lastEvo` fires, never that the evolved weapon does).
+
+Fix:
+- `slakelake`: fires a big lake (r 55+5/lvl, 3.5s, 0.4s ticks) at the
+  nearest enemy that ALSO drags everything inside toward its center (the
+  VS Black-Hole identity; heavies resist via kbResist). `Zone.drag` field +
+  pull in the zone tick loop; `__cap.zones()` debug accessor.
+- `halo`: full damaging disc (the ring's band becomes the whole area),
+  shards keep spinning as the skin — that was the evo's whole promise.
+- m4 gains B1b (ALL 15 evolved weapons must fire) + B1c (lake drag moves a
+  rim enemy toward center) — the regression lock so no future evolution can
+  ship as table-stakes-only.
+
+Validation: official baseline 5/5 unchanged (deaths 3/10, heaven 10/10
+@7.2min — baseline's halo chests just started WORKING, the gate absorbed it);
+variants soak 6/6 with avocado boss med 1→4 and surv 0/5→2/5 (that was the
+disarm, not the numbers); full gate 248/0 across 7 suites (m4 78→96).
