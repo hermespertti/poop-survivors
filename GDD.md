@@ -1105,8 +1105,18 @@ layer). Every refactor must reproduce `815bf2e5…` byte-identically; phase 1
 did, plus full gate 248/0 and a clean vite build. Any split that shifts RNG
 order fails loud.
 
-**Phase 2 (next):** logic modules — stage (run lifecycle + shop), levelup
-(option economy), systems (firing/bosses/director), update/render/input —
-with shared mutable state via ES live bindings: one owning module does all
-reassignments, readers import bare names, foreign writes become setters.
-Same audit: tsc + fingerprint + gate.
+**Phase 2 shipped same day:** the logic itself split out — `game.ts` (G +
+run lifecycle + shop + selection, the ONLY rebinder of G is startRun),
+`update.ts` (the fixed-timestep director step), `systems.ts` (firing +
+bosses + evolution), `combat.ts` (scaling/targeting/damage funnel),
+`spawner.ts` (director script), `levelup.ts` (option economy + XP),
+`canvas.ts` (surface/fit/camera), `input.ts` (keys/pointer/thumbstick),
+`overlays.ts` (HUD + screens), `render.ts` (world pass). main.ts is 210
+lines: boot, frame loop, __cap probe. Shared mutable state follows the
+live-binding discipline: readers import the bare name, foreign writes go
+through owner-side setters (TS2632 makes any violation a compile error).
+tools/phase2.py + wire.py + setters.py regenerate the split mechanically
+with a line-conservation proof; extraction was never hand-typed.
+
+Verified: tsc 0 errors, fingerprint `815bf2e5…` byte-identical across the
+whole split, full gate **248/0**, vite build clean.
