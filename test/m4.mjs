@@ -84,6 +84,12 @@ for (const id of ['superfart', 'stickyplop', 'halo', 'slakelake', 'superball', '
   }, id);
   ok(r > 0, `evolved weapon ${id} fires`);
 }
+// B1b2 (M20): the fire-registry coverage guard — every WEAPONS id must have
+// a FIRE handler at boot. This is the M18 dead-evolution bug class made
+// unrepresentable: a registered-but-dead weapon fails here, not at minute 12
+// of a human run.
+const fireCov = await page.evaluate(() => window.__cap.fireMissing());
+ok(Array.isArray(fireCov) && fireCov.length === 0, `fire registry covers every weapon (missing: ${JSON.stringify(fireCov)})`);
 // B1c: Slime Lake drags (M18): the lake lands on enemy 0 (its center is
 // there — drag skips the center), so enemy 1 sits at the lake rim and must
 // get pulled toward the center across damage ticks.

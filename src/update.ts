@@ -1,5 +1,10 @@
 // M19 phase 2: update module — moved verbatim from main.ts.
-
+// M20 readability split: the 444-line update() body is now a pipeline of
+// named step* passes in EXACTLY the old order. The old mid-function
+// `endRun(...); return;` early-exits become `return false` (stop the
+// pipeline); update() consumes the signal identically. Evaluation order and
+// RNG consumption are frozen by test/fingerprint.mjs (`815bf2e5…`) — any
+// pass reorder or re-extraction that shifts an RNG draw fails loud.
 
 import { setMusicMsgOff, setMusicMsgT, setMuteMsgOn, setMuteMsgT, setPaused, setSelectedChar } from './game';
 
@@ -16,9 +21,14 @@ import { pickKind, spawnEnemy, spawnItem, spawnSpasmWall, spawnWave } from './sp
 import { damageWall, fireWeapons, hitBoss, hitFlush, resolveChest, spawnBoss } from './systems';
 import { CHARACTERS, UPGRADES } from './tables/chars';
 import { BOSS_SCHEDULE, BOSS_STATS } from './tables/enemies';
-import { Enemy } from './types';
+import { Enemy, Game } from './types';
 
-export function update(): void {
+type Player = Game['player'];
+// true = continue the pipeline; false = run ended mid-pass (old `return`)
+type Step = (p: Player) => boolean;
+
+// ---------- input + mode routing (unchanged, runs every frame) ----------
+function stepInput(): void {
   syncKeys();
   // mute toggles (M16 split): [M] = attack/hit/UI sounds, [N] = music only.
   // Both work on title/play/levelup/dead/win (before mode gates).
@@ -51,11 +61,11 @@ export function update(): void {
   } else if (G.mode === 'dead' || G.mode === 'win') {
     if (justPressed(' ') || justPressed('enter')) startRun(G.seed);
   }
-  if (G.mode !== 'play') { if (G.evolutionT > 0) G.evolutionT -= DT; return; }
-  if (paused) return;
+}
 
+// ---------- pass 1: clock, movement, timers ----------
+const stepPlayerMove: Step = (p) => {
   G.time += DT;
-  const p = G.player;
 
   let [mx, my] = currentMove();
   const mlen = Math.hypot(mx, my);
@@ -77,10 +87,11 @@ export function update(): void {
   if (G.flashT > 0) G.flashT -= DT;
   if (G.evolutionT > 0) G.evolutionT -= DT;
   if (G.shake > 0) G.shake = Math.max(0, G.shake - DT * 40);
+  return true;
+};
 
-  fireWeapons();
-
-  // bullets
+// ---------- pass 2: bullets (player + enemy), pierce/ricochet/mine/sticky ----------
+const stepBullets: Step = (p) => {
   for (let i = G.bullets.length - 1; i >= 0; i--) {
     const b = G.bullets[i];
     b.x += b.vx * DT; b.z += b.vz * DT; b.life -= DT;
@@ -109,7 +120,7 @@ export function update(): void {
         G.shake = Math.max(G.shake, 4);
         sfx('hurt');
         G.dmgNums.push({ x: p.x, z: p.z - 8, vy: -26, t: 0.8, txt: '-' + Math.max(1, Math.round(eDmg(b.dmg)) - G.armor), crit: true });
-        if (p.hp <= 0) { p.hp = 0; endRun(false, false); return; }
+        if (p.hp <= 0) { p.hp = 0; endRun(false, false); return false; }
         G.bullets.splice(i, 1);
       }
       continue;
@@ -164,8 +175,11 @@ export function update(): void {
       b.kind = 'expired';
     }
   }
+  return true;
+};
 
-  // zones (puddles)
+// ---------- pass 3: zones (puddles, lakes, blast aftermath, drag) ----------
+const stepZones: Step = () => {
   for (let i = G.zones.length - 1; i >= 0; i--) {
     const zn = G.zones[i];
     zn.life -= DT; zn.tick -= DT;
@@ -194,10 +208,14 @@ export function update(): void {
       if (G.flush && Math.hypot(G.flush.x - zn.x, G.flush.z - zn.z) < zn.r + G.flush.radius) hitFlush(zn.dmg, zn.x, zn.z);
     }
   }
+  return true;
+};
 
-  // M13 Plop Turrets: stationary, each acquires the nearest enemy within 220u
-  // and fires plops on its own rate. They expire (life) — dropped turrets are
-  // a tempo weapon, not a permanent base (VS: your drops have a window).
+// ---------- pass 4: dropped turrets (M13) ----------
+// M13 Plop Turrets: stationary, each acquires the nearest enemy within 220u
+// and fires plops on its own rate. They expire (life) — dropped turrets are
+// a tempo weapon, not a permanent base (VS: your drops have a window).
+const stepTurrets: Step = () => {
   for (let i = G.turrets.length - 1; i >= 0; i--) {
     const tu = G.turrets[i];
     tu.life -= DT;
@@ -220,8 +238,11 @@ export function update(): void {
       G.bullets.push({ x: tu.x, z: tu.z, vx: Math.cos(aa) * spd, vz: Math.sin(aa) * spd, life: 1.2, dmg: tu.dmg, ang: aa, hitR: wArea(3), kind: 'plop' });
     }
   }
+  return true;
+};
 
-  // enemies
+// ---------- pass 5: enemies (chase, spitter band, contact damage) ----------
+const stepEnemies: Step = (p) => {
   for (let i = G.enemies.length - 1; i >= 0; i--) {
     const e = G.enemies[i];
     e.wob += DT * 6;
@@ -255,10 +276,14 @@ export function update(): void {
       G.shake = 6; G.flashT = Math.max(G.flashT, 0.12);
       sfx('hurt'); // the player takes damage — distinct from the enemy 'hit' clatter
       G.dmgNums.push({ x: p.x, z: p.z - 8, vy: -26, t: 0.8, txt: '-' + Math.max(1, Math.round(eDmg(e.dmg)) - G.armor), crit: true });
-      if (p.hp <= 0) { p.hp = 0; endRun(false, false); return; }
+      if (p.hp <= 0) { p.hp = 0; endRun(false, false); return false; }
     }
   }
+  return true;
+};
 
+// ---------- pass 6: boss schedule + boss behavior ----------
+const stepBoss: Step = (p) => {
   // boss schedule (M3): spawn the next scheduled boss when its time arrives
   if (!G.boss && G.bossIdx < BOSS_SCHEDULE.length && G.time >= BOSS_SCHEDULE[G.bossIdx].t) {
     const ev = BOSS_SCHEDULE[G.bossIdx];
@@ -328,12 +353,17 @@ export function update(): void {
       G.shake = 10; G.flashT = 0.2;
       sfx('hurt');
       G.dmgNums.push({ x: p.x, z: p.z - 10, vy: -26, t: 0.9, txt: '-' + Math.max(1, Math.round(eDmg(b.dmg)) - G.armor), crit: true });
-      if (p.hp <= 0) { p.hp = 0; endRun(false, false); return; }
+      if (p.hp <= 0) { p.hp = 0; endRun(false, false); return false; }
     }
   }
-  // THE FINAL FLUSH (30:00): spawns at RUN_LEN; killable → victory+gold, touch → flushed
-  // The flush hp does NOT time-scale (unlike bosses) — a 30:00 player's build
-  // must be able to kill it in ~8s of contact window, so it stays flat.
+  return true;
+};
+
+// ---------- pass 7: THE FINAL FLUSH ----------
+// THE FINAL FLUSH (30:00): spawns at RUN_LEN; killable → victory+gold, touch → flushed
+// The flush hp does NOT time-scale (unlike bosses) — a 30:00 player's build
+// must be able to kill it in ~8s of contact window, so it stays flat.
+const stepFlush: Step = (p) => {
   if (!G.flush && G.time >= RUN_LEN && !G.flushResolved) {
     const st = BOSS_STATS.flush;
     G.flush = {
@@ -354,10 +384,15 @@ export function update(): void {
     if (d < f.radius + PLAYER.radius) {
       // touched → flushed ending
       endRun(false, true);
-      return;
+      return false;
     }
   }
-  // Spasm Wall update: the slow ring of tanky enemies closing around the player
+  return true;
+};
+
+// ---------- pass 8: spasm wall (15:00 constipation) ----------
+// Spasm Wall update: the slow ring of tanky enemies closing around the player
+const stepWall: Step = (p) => {
   if (G.wall.length > 0) {
     for (let i = G.wall.length - 1; i >= 0; i--) {
       const e = G.wall[i];
@@ -369,11 +404,15 @@ export function update(): void {
         p.hp -= Math.max(1, eDmg(e.dmg) - G.armor); p.invuln = PLAYER.invulnAfterHit;
         G.shake = 6;
         sfx('hurt');
-        if (p.hp <= 0) { p.hp = 0; endRun(false, false); return; }
+        if (p.hp <= 0) { p.hp = 0; endRun(false, false); return false; }
       }
     }
   }
+  return true;
+};
 
+// ---------- pass 9: pickups (chest + stage items) ----------
+const stepPickups: Step = (p) => {
   // chest pickup
   if (G.chest && Math.hypot(G.chest.x - p.x, G.chest.z - p.z) < 14) resolveChest();
   // stage items pickup
@@ -388,12 +427,16 @@ export function update(): void {
       sfx('pickup'); // stage-item pickup blip (gold bag / donut)
     }
   }
+  return true;
+};
 
-  // spawn director (M3): script density + wave bursts + spikes
-  // M13 density pass (human feedback: "way more enemies, bigger waves"): the
-  // ambient interval falls faster and floors lower (1.1/0.25 → 0.85/0.18),
-  // wave bursts grow faster and hit a 45 cap, field cap 260 → 380. The
-  // balance gate's analytic spawnRate (test/balance.mjs) mirrors the ambient.
+// ---------- pass 10: spawn director (script density + waves + spikes) ----------
+// spawn director (M3): script density + wave bursts + spikes
+// M13 density pass (human feedback: "way more enemies, bigger waves"): the
+// ambient interval falls faster and floors lower (1.1/0.25 → 0.85/0.18),
+// wave bursts grow faster and hit a 45 cap, field cap 260 → 380. The
+// balance gate's analytic spawnRate (test/balance.mjs) mirrors the ambient.
+const stepDirector: Step = () => {
   G.spawnCd -= DT;
   G.spawnInterval = Math.max(0.18, 0.85 - G.time / 260);
   if (G.spawnCd <= 0) { spawnEnemy(pickKind()); G.spawnCd = G.spawnInterval; }
@@ -419,8 +462,11 @@ export function update(): void {
   // stage items: absolute schedule — 2:30, then every 2.5 min
   const itemNext = Math.floor((G.time - 150) / 150) + 1; // index of next item slot
   if (G.time >= 150 && G.itemIdx < itemNext) { G.itemIdx = itemNext; spawnItem(); }
+  return true;
+};
 
-  // gems
+// ---------- pass 11: gems (magnet + pickup + XP) ----------
+const stepGems: Step = (p) => {
   const magnetR = PLAYER.magnetBase * (1 + (CHARACTERS[G.char]?.magnetBonus || 0)) + (G.level - 1) * PLAYER.magnetPerLevel;
   for (let i = G.gems.length - 1; i >= 0; i--) {
     const g = G.gems[i];
@@ -431,14 +477,44 @@ export function update(): void {
     else { g.x += g.vx * DT; g.z += g.vz * DT; g.vx *= 0.9; g.vz *= 0.9; }
     if (d < PLAYER.radius + 3) { G.gems.splice(i, 1); G.stats.gems++; fxGem(g.x, g.z); gainXp(g.val * G.stats.xpMult); sfx('gem'); }
   }
+  return true;
+};
 
-  // damage numbers
+// ---------- pass 12: damage numbers + run clock ----------
+const stepFxAndClock: Step = () => {
   for (let i = G.dmgNums.length - 1; i >= 0; i--) {
     const n = G.dmgNums[i]; n.z += n.vy * DT; n.t -= DT;
     if (n.t <= 0) G.dmgNums.splice(i, 1);
   }
-
   if (G.time >= RUN_LEN) endRun(true, false);
-}
+  return true;
+};
 
-// ---------- run end (M4 meta): bank gold + check unlocks ----------
+const stepFire: Step = () => { fireWeapons(); return true; };
+
+// ---------- the pipeline (order FROZEN by test/fingerprint.mjs) ----------
+const PASSES: Step[] = [
+  stepPlayerMove,
+  stepFire, // M20 registry dispatch (fireWeapons ticks every weapon's cd itself)
+  stepBullets,
+  stepZones,
+  stepTurrets,
+  stepEnemies,
+  stepBoss,
+  stepFlush,
+  stepWall,
+  stepPickups,
+  stepDirector,
+  stepGems,
+  stepFxAndClock,
+];
+
+export function update(): void {
+  stepInput();
+  if (G.mode !== 'play') { if (G.evolutionT > 0) G.evolutionT -= DT; return; }
+  if (paused) return;
+  const p = G.player;
+  for (const pass of PASSES) {
+    if (!pass(p)) return; // run ended mid-pass (old mid-function returns)
+  }
+}

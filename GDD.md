@@ -286,6 +286,7 @@ bars) and played by a `Chip` synth that emulates the APU channels.
 | **M17** | build-diversity balance pass: `test/balance-variants.mjs` (6 characters × 5 seeds, official `think()` verbatim) closes the bot pick-strategy gap from §22; soak verdicts then tuned — Cheese (mine kit starved, died 5–10min 5/5): +15% dmg/+10% speed/+1 armor/+40 HP (multiplier-fraction knobs — a fat-fingered `15` was +1500%); Avocado (paper body at first boss): +2 armor/+40 HP/+15% dmg, puddle-buff experiment rolled back (worse heaven); Plunger accepted as the tank identity (strongest, boss med 6, no nerf) | official baseline 5/5 still green (deaths 3/10, heaven 10/10 @7.2min); variants soak 6/6 viable (was 5/6, cheese FAIL); full gate 230/0 — **DONE 2026-09-07 (§30)** |
 | **M18** | dead-evolution fix: `slakelake` + `halo` were registered with stats but had NO `fireWeapons()` branch — evolution chests silently disarmed the player (root cause of avocado's boss med 1). Slime Lake = drag-lake at nearest enemy (`Zone.drag`, kbResist-aware pull); Halo = full damaging disc; m4 B1b/B1c lock every evolved weapon firing + the drag | baseline 5/5 unchanged; avocado boss med 1→4, surv 0/5→2/5; full gate 248/0 across 7 suites (m4 78→96) — **DONE 2026-09-07 (§31)** |
 | **M19** | architecture split: phase 1 extracted all pure data (types/constants/tables — balance edits no longer touch mechanics files), phase 2 split the logic (game/update/systems/combat/spawner/levelup/canvas/input/overlays/render; main.ts 2419→210 lines); `test/fingerprint.mjs` oracle freezes the sim at 5 checkpoints × 4 seeds (`815bf2e5…`) so any RNG-order shift fails loud; split was machine-generated (tools/phase2/wire/setters) with a line-conservation proof | tsc 0 errors; fingerprint byte-identical across both phases; full gate 248/0; post-split balance soak reproduces M18 numbers — **DONE 2026-09-07 (§32)** |
+| **M20** | fire registry + update() pipeline: every weapon behavior moved to `FIRE[id]` handlers in `src/fire.ts` with a boot-time `assertFireCoverage()` guard (the M18 registered-but-dead-weapon bug class, now caught at boot via `__cap.fireMissing()` + new m4 B1b2 assertion); `update()`'s 444-line body is a 13-pass named pipeline in frozen order, mid-function endRun returns → `return false` pipeline stops (systems.ts 438→146) | tsc 0 errors; fingerprint `815bf2e5…` byte-identical through every step; guard self-caught missing minelord/chainstorm keys on first run (worked as designed); full gate **249/0** across 7 suites — **DONE 2026-09-08 (§33)** |
 
 ## 15. Decisions (locked 2026-08-31, user)
 
@@ -1121,3 +1122,37 @@ with a line-conservation proof; extraction was never hand-typed.
 
 Verified: tsc 0 errors, fingerprint `815bf2e5…` byte-identical across the
 whole split, full gate **248/0**, vite build clean.
+
+## 33. M20 fire registry + update() pipeline (2026-09-08) — the M18 hole, closed structurally
+
+Two refactors from the M19 leftover audit, one pass, both fingerprint-frozen.
+
+**1. `src/fire.ts` — the FIRE registry.** `fireWeapons()` was a 310-line
+`if (id === …)` chain; M18's real bug (halo + slakelake registered with stats
+but NO branch — chests silently disarmed the player) lived in exactly that
+shape. Now every weapon behavior is `FIRE[id]` — a handler keyed by weapon id
+— and `assertFireCoverage()` runs at boot: any WEAPONS entry without a
+handler logs loud AND is readable via `__cap.fireMissing()`, which the m4
+gate (B1b2) asserts empty. Dead evolutions are now caught at boot, not at
+minute 12 of a human run. Base/evolution pairs that shared a branch body share
+one handler (bouncyShot, bombShot, mineShot, chainShot, fireAura,
+fireOrbitHeavy, fireGnat, fireTurret, fireBoomer, fireTrail); the aimed
+weapons share the `aimed()` preamble (cd gate → acquire → face → reset →
+count → blip) so the shot bodies stay verbatim. `sweepBand`/`sweepDisc`
+unify the four-layer damage order (enemies → wall → boss → flush) that ring,
+disc and orbit weapons all repeat. systems.ts: 438→146 lines.
+
+**2. `update()` — the pipeline.** The 444-line single function is now a
+13-pass pipeline of named steps (`stepPlayerMove → stepFire → stepBullets →
+stepZones → stepTurrets → stepEnemies → stepBoss → stepFlush → stepWall →
+stepPickups → stepDirector → stepGems → stepFxAndClock`), extracted verbatim
+in order. The old mid-function `endRun(); return;` early-exits become
+`return false` and update() stops the pipeline at the same frame, same state.
+Input/mode routing stays above the play gate, untouched.
+
+First run of the guard caught itself: the initial registry shipped without
+`minelord`/`chainstorm` keys — the coverage assert + B1b2 failed loud exactly
+as designed, at boot, three tests. Fixed; the oracle never moved.
+
+Verified: tsc 0 errors; fingerprint `815bf2e5…` byte-identical through every
+step of the change; vite build clean; full gate green (§14 M20 row).

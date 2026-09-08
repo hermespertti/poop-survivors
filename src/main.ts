@@ -13,6 +13,7 @@ import { gainXp, pickOption } from './levelup';
 import { camFXx, render } from './render';
 import { pickKind, spawnEnemy, spawnItem, spawnSpasmWall } from './spawner';
 import { evoReady, spawnBoss } from './systems';
+import { assertFireCoverage, missingFireHandlers } from './fire';
 import { update } from './update';
 // M1 core loop + the weapon FRAMEWORK: weapons as a data table, passive stat
 // multipliers, knockback, a boss (The First Wind) at 3:00, and the chest →
@@ -77,7 +78,11 @@ if ('serviceWorker' in navigator && !location.hostname.includes('localhost')) {
 
 // ---------- __cap probe ----------
 const win = window;
+// M20: boot-time fire-registry coverage guard (the M18 dead-evolution bug
+// class). Missing handlers are loud in console AND readable by the test gate.
+assertFireCoverage();
 (win as any).__cap = {
+  fireMissing: () => missingFireHandlers(),
   state: () => ({
     mode: G.mode, time: +G.time.toFixed(3), paused: paused, // M11: paused readback (mobile button soak)
     x: +G.player.x.toFixed(2), z: +G.player.z.toFixed(2),
