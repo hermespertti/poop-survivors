@@ -18,6 +18,16 @@ export function render(t: number): void {
   const sy = G.shake > 0 ? Math.cos(t * 39) * G.shake * 0.5 : 0;
   const cx = camX() + sx, cy = camY() + sy;
   camFXx = cx; camFXy = cy; // M15: FX layer shares the exact (shake-included) camera
+  // M23: view culling for the 3× density pass. drawSprite is per-pixel
+  // fillRect (~64 calls/sprite at 8×8); 1140 enemies + hundreds of gems
+  // and bullets would be ~100k fillRects/frame. cx/cy are the view's
+  // top-left WORLD coords, so visible = [cx-16, cx+VIEW_W+16] × same for
+  // z (margin covers sprite size). The world is 4× the view area, so this
+  // cuts ~70% of draws — what makes the density knob affordable. Cosmetic
+  // pass only: the sim never sees it, determinism untouched.
+  const vl = cx - 16, vr = cx + VIEW_W + 16;
+  const vt = cy - 16, vb = cy + VIEW_H + 16;
+  const vis = (x: number, z: number) => x > vl && x < vr && z > vt && z < vb;
   drawFloor(cx, cy);
   // zones under everything (M13: tint lets the slime trail read as green muck)
   for (const zn of G.zones) {
@@ -51,6 +61,7 @@ export function render(t: number): void {
     else drawSprite(ctx, SPRITES.bolt, Math.round(b.x - cx), Math.round(b.z - cy), 0);
   }
   for (const e of G.enemies) {
+    if (!vis(e.x, e.z)) continue;
     const frame = Math.floor(t * 8 + e.wob) % 2;
     const spr = enemySprite(e.kind, false);
     const hitSpr = enemySprite(e.kind, true);

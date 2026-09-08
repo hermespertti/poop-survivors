@@ -10,7 +10,7 @@ import { setMusicMsgOff, setMusicMsgT, setMuteMsgOn, setMuteMsgT, setPaused, set
 
 import { toggleFullscreen } from './canvas';
 import { damageEnemy, eDmg, nearestEnemy, nearestEnemyExcluding, wArea, wProjSpeed } from './combat';
-import { DT, PLAYER, RUN_LEN, SPIKE_EVERY, SPIKE_T, WORLD_H, WORLD_W } from './constants';
+import { DT, DENSITY, PLAYER, RUN_LEN, SPIKE_EVERY, SPIKE_T, WORLD_H, WORLD_W } from './constants';
 import { fxGem } from './fx';
 import { G, buyUpgrade, clampNum, cycleStage, endRun, musicMsgOff, musicMsgT, muteMsgOn, muteMsgT, paused, selectedChar, startRun } from './game';
 import { currentMove, justPressed, keyIndex, syncKeys } from './input';
@@ -445,7 +445,7 @@ const stepPickups: Step = (p) => {
 // balance gate's analytic spawnRate (test/balance.mjs) mirrors the ambient.
 const stepDirector: Step = () => {
   G.spawnCd -= DT;
-  G.spawnInterval = Math.max(0.18, 0.85 - G.time / 260);
+  G.spawnInterval = Math.max(0.18 / DENSITY, 0.85 / DENSITY - G.time / 260);
   if (G.spawnCd <= 0) { spawnEnemy(pickKind()); G.spawnCd = G.spawnInterval; }
   // music intensity follows the pressure curve (density → louder/heavier)
   musicIntensity(Math.min(1.6, 0.4 + G.enemies.length / 120 + (G.boss ? 0.4 : 0)));
@@ -461,12 +461,13 @@ const stepDirector: Step = () => {
     G.waveIdx = waveNext;
     let size = 12 + Math.floor(G.time / 60) * 3; // M13: 8+2/min → 12+3/min
     size = Math.round(size * (STAGES[G.stage]?.waveMult || 1)); // M21: sewers ×1.25 (kitchen/others ×1 — untouched)
-    spawnWave(Math.min(45, size)); // M13: cap 30 → 45
+    size = Math.round(size * DENSITY); // M23: ×DENSITY (3× the wave, not just the cap — the cap alone never bound)
+    spawnWave(Math.min(45 * DENSITY, size)); // M13: cap 30 → 45; M23: ×DENSITY → 135
   }
   // density spike: 30s of doubled spawn rate (first at 12:00, every 2 min after)
   const spikeActive = G.time >= SPIKE_T && ((G.time - SPIKE_T) % SPIKE_EVERY) < 30;
-  if (spikeActive && G.spawnCd > 0.18) { G.spawnCd = 0.18; } // M13: floor 0.25 → 0.18
-  if (G.enemies.length > 380) G.enemies.splice(0, G.enemies.length - 380); // M13: cap 260 → 380
+  if (spikeActive && G.spawnCd > 0.18 / DENSITY) { G.spawnCd = 0.18 / DENSITY; } // M13: floor 0.25 → 0.18; M23: /DENSITY → 0.06
+  if (G.enemies.length > 380 * DENSITY) G.enemies.splice(0, G.enemies.length - 380 * DENSITY); // M13: cap 260 → 380; M23: ×DENSITY → 1140
   // stage items: absolute schedule — 2:30, then every 2.5 min
   const itemNext = Math.floor((G.time - 150) / 150) + 1; // index of next item slot
   if (G.time >= 150 && G.itemIdx < itemNext) { G.itemIdx = itemNext; spawnItem(); }

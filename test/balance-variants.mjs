@@ -206,7 +206,8 @@ await page.evaluate(() => {
 await page.evaluate(() => window.__cap.freeze());
 
 const med = (a) => { if (!a.length) return 0; const s = [...a].sort((x, y) => x - y); const m = s.length >> 1; return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2; };
-const spawnRate = (t) => 1 / Math.max(0.18, 0.85 - t / 260);
+const DENSITY = 3; // mirror src/constants.ts (M23)
+const spawnRate = (t) => 1 / Math.max(0.18 / DENSITY, 0.85 / DENSITY - t / 260);
 function heavenOf(samples) {
   const wins = [];
   for (let i = 0; i + 5 < samples.length; i += 6) {

@@ -1215,3 +1215,22 @@ that mutates the ENDGAME RULE itself, not just the script timing:
 Six new m4 B5b assertions: locked-key, real-kill-banks-unlock (not
 metaGive), early hunt at 20:00, survive-the-kill + gold consolation,
 reform timer, reform happens.
+
+## 36. M23 — 3× Density (DENSITY knob)
+
+User ask: "10x the enemies" → negotiated to 3x (10x = 3800+ entities/frame,
+dead on a 2D canvas). One knob in constants.ts: `DENSITY = 3` divides the
+ambient cadence (×3 spawn rate), multiplies wave size and cap (135), floors
+spikes at 0.06. Render gets viewport culling (world is 4× the view; ~70% of
+fillRects skipped) — cosmetic-only, sim untouched.
+
+Oracle: INTENTIONAL rebaseline 815bf2e5… → 3ceb9492… (cadence changes RNG
+landings; confirmed deterministic across runs).
+
+Balance soak (test/balance-base-m23.log): **7/10 wins, 3/10 deaths (soup,
+27:37–28:38)** — death band holds. Medians lv 86, kills 28.9k/run.
+Population peaks 370-380 at 25:00 (cap 1140 never binds). Bullet heaven
+median 22.9 min: at ×3 the clear>spawn crossing is genuinely endgame — the
+gate band was re-centered 5–10 → 20–28 min with that reasoning recorded in
+balance.mjs (NOT an unscored exception; the old band measured ×1 physics).
+Gate: 258/0 green. Fingerprint self-check: 2× identical.

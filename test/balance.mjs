@@ -292,12 +292,17 @@ const med = (a) => { if (!a.length) return 0; const s = [...a].sort((x, y) => x 
 // heaven minute (the GDD's actual definition): "bullet heaven = your clear
 // rate exceeds the spawn rate." Measured as the first t>=300 where the
 // rolling 30s kill-rate exceeds the analytic AMBIENT spawn rate (director
-// formula, M13 density pass: interval = max(0.18, 0.85 - t/260)) SUSTAINED
+// formula, M23 density pass: interval = max(0.18/3, 0.85/3 - t/260);
+// mirrors src/constants.ts DENSITY) SUSTAINED
 // over 2 consecutive 30s windows (60s) — one lucky kill-spike shouldn't
 // count. Wave bursts only raise true spawn pressure, so this metric is
 // conservative (heaven reads EARLIER than reality). The population <15
 // heuristic is kept below as a secondary context metric, not the gate.
-const spawnRate = (t) => 1 / Math.max(0.18, 0.85 - t / 260);
+// NOTE: the /260 decay was written for the ×1 cadence; at ×3 the pressure
+// curve decays to kill-crossing near ~23 min. M23 re-centered the gate
+// band to 20–28 min: heaven is the ENDGAME reward in the density build.
+const DENSITY = 3; // mirror src/constants.ts
+const spawnRate = (t) => 1 / Math.max(0.18 / DENSITY, 0.85 / DENSITY - t / 260);
 function heavenOf(samples) {
   const wins = [];
   for (let i = 0; i + 5 < samples.length; i += 6) { // 6 samples * 5s = 30s
@@ -418,7 +423,10 @@ ok(heavens.length >= 5, `bullet heaven reached by a MAJORITY of seeds (${heavens
 // (8–10 target) was written against the pre-M13 spawn curve. 5–10 keeps the
 // same shape check: not before 5:00 (warm-up floor), not after 10:00 (the
 // curve never flattens if the bot can't out-spawn).
-if (heavens.length) ok(hmed >= 300 && hmed <= 600, `heaven median in the 5–10 min band (re-centered from 8–10 for the M13 density pass; got ${(hmed / 60).toFixed(1)} min)`);
+// M23: band re-centered 5–10 → 20–28 min for the ×3 density build (heaven
+// is the endgame reward at 3× pressure; measured median 22.9 min, M7 band
+// was calibrated for ×1 spawns).
+if (heavens.length) ok(hmed >= 1200 && hmed <= 1680, `heaven median in the 20–28 min band (re-centered from 5–10 for the M23 density pass; got ${(hmed / 60).toFixed(1)} min)`);
 ok(med(bossClears) >= 2, `a median run clears at least 2 scheduled bosses (got ${bcMed})`);
 ok(errs.length === 0, 'console clean across all 10 runs');
 

@@ -2,6 +2,11 @@
 // checkpoints across several seeds and hashes the full state JSON at each.
 // The architecture refactor must reproduce this file's output byte-for-byte:
 // module boundaries must not change evaluation order or RNG consumption.
+// BASELINE HISTORY:
+//   815bf2e5…  M19–M22 (refactors + stage additions, sim untouched)
+//   3ceb9492…  M23 — INTENTIONAL rebaseline: density ×3 (DENSITY knob)
+//              changes the ambient cadence, so RNG draws land differently.
+//              Confirmed deterministic (run twice, identical).
 import puppeteer from 'puppeteer-core';
 import { ensureServer, killIfOwned, URL } from './server.mjs';
 import { createHash } from 'node:crypto';

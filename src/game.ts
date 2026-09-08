@@ -4,7 +4,7 @@ import { setBotDir } from './input';
 
 
 
-import { PLAYER, RUN_LEN, WORLD_H, WORLD_W } from './constants';
+import { DENSITY, PLAYER, RUN_LEN, WORLD_H, WORLD_W } from './constants';
 import { fxReset } from './fx';
 import { botDir } from './input';
 import { META, saveMeta } from './meta';
@@ -84,7 +84,7 @@ export function mkGame(seed: number): Game {
     // baked-bonus convention meant recompute could never see new char bonuses;
     // the m2 "fresh baseline" pins apply AFTER recompute: crouton 1.1/100).
     stats: { maxLevel: 1, levelUps: 0, gems: 0, nan: 0, shots: {}, kbApplied: 0, chestTaken: 0, itemTaken: 0, dmgMult: 1, cdMult: 1, speedMult: 1, xpMult: 1, projSpeedMult: 1, areaMult: 1, durationMult: 1, goldMult: 1, maxHp: PLAYER.maxHp, turretCap: 1, boomerMult: 1, trailMult: 1 },
-    spawnCd: 1.0, spawnInterval: 0.85, waveIdx: 0, itemIdx: 0,
+    spawnCd: 1.0 / DENSITY, spawnInterval: 0.85 / DENSITY, waveIdx: 0, itemIdx: 0, // M23: /DENSITY cadence
     char: selectedChar, stage: selectedStage, armor: ch.armor,
     turrets: [], trailT: 0, trailX: 0, trailZ: 0,
   };
