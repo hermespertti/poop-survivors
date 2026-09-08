@@ -12,6 +12,7 @@ import { G, endRun, recomputeStats } from './game';
 import { sfx } from './sfx';
 import { BOSS_STATS } from './tables/enemies';
 import { WEAPONS } from './tables/weapons';
+import { STAGES } from './tables/chars';
 import { Enemy } from './types';
 
 export function fireWeapons(): void {
@@ -88,6 +89,18 @@ export function hitFlush(dmg: number, srcX: number, srcZ: number): void {
   if (f.hp <= 0) {
     fxFlushKill(f.x, f.z); // M15 FX: the Flush's victory burst (before null)
     G.flush = null;
+    G.flushKilled = true; // M22: feeds the flushkill unlock (The Septic Tank)
+    // M22 SEPTIC RULE: in The Septic Tank, killing the Flush does NOT end
+    // the run — it's the tank's resident horror, not the clock's executioner.
+    // Gold consolation + FX, and stepFlush schedules its comeback (the touch
+    // ending still applies; the run still ends at 30:00).
+    if (STAGES[G.stage]?.earlyFlush) {
+      G.gold += Math.round(250 * G.stats.goldMult);
+      G.flushBack = G.time + 60;
+      sfx('win');
+      G.shake = 12; G.flashT = 0.5;
+      return;
+    }
     G.gold += Math.round(500 * G.stats.goldMult); // bonus gold for killing the Flush
     sfx('win');
     endRun(true, false);

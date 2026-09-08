@@ -11,7 +11,7 @@ import { COARSE } from './input';
 import { META } from './meta';
 import { muted } from './sfx';
 import { evoReady } from './systems';
-import { CHARACTERS, STAGES, UPGRADES } from './tables/chars';
+import { CHARACTERS, STAGES, STAGE_IDS, UPGRADES } from './tables/chars';
 import { UNLOCK_LABEL } from './tables/sprites';
 import { WEAPONS } from './tables/weapons';
 
@@ -49,6 +49,11 @@ export function drawFloor(cx: number, cy: number): void {
           if (h % 7 === 0) ctx.fillRect(tx * TILE - cx, ty * TILE - cy + (h % 16), 16, 1);
           if (h % 5 === 0) ctx.fillRect(tx * TILE - cx + (h % 12), ty * TILE - cy + ((h >> 2) % 12), 2, 2);
           if (h % 19 === 0) ctx.fillRect(tx * TILE - cx + ((h >> 1) % 16), ty * TILE - cy + ((h >> 3) % 16), 1, 1);
+        } else if (st.detail === 5) {
+          // M22 septic tank: sludge blobs + rising bubbles (the tank is ALIVE)
+          if (h % 4 === 0) ctx.fillRect(tx * TILE - cx + (h % 10), ty * TILE - cy + ((h >> 2) % 10), 3, 2);
+          if (h % 11 === 0) ctx.fillRect(tx * TILE - cx + ((h >> 1) % 14), ty * TILE - cy + ((h >> 4) % 14), 1, 2);
+          if (h % 23 === 0) ctx.fillRect(tx * TILE - cx + ((h >> 3) % 12) + 2, ty * TILE - cy + 2, 1, 1);
         } else {
           // kitchen (M13): sparse crumbs + a few flour streaks
           if (h % 15 === 0) ctx.fillRect(tx * TILE - cx + (h % 15) + 1, ty * TILE - cy + ((h >> 2) % 15) + 1, 1, 1);
@@ -303,9 +308,11 @@ export function drawTitle(t: number): void {
   ctx.fillRect(10, 148, VIEW_W - 20, 1);
   ctx.fillRect(10, 229, VIEW_W - 20, 1);
   center('CH: ' + line.trim(), 152, 0);
-  // stage select: S (tap the right half on a phone) — M13: three stages
-  const stgChar = (id: string) => (STAGES[id].unlock === 'default' || META.unlocked.includes(STAGES[id].unlock)) ? id[0].toUpperCase() : '?';
-  center('STAGE: ' + STAGES[selectedStage].name.toUpperCase() + `  [S] (${stgChar('kitchen')}${stgChar('bathroom')}${stgChar('compost')}${stgChar('sewers')})`, 164, 0);
+  // stage select: S (tap the right half on a phone) — M13: three stages,
+  // M21/M22: five. M22: slots use the stage's `letter` (sewers and septic
+  // both start with S — id[0] collided).
+  const stgChar = (id: string) => (STAGES[id].unlock === 'default' || META.unlocked.includes(STAGES[id].unlock)) ? (STAGES[id].letter || id[0].toUpperCase()) : '?';
+  center('STAGE: ' + STAGES[selectedStage].name.toUpperCase() + `  [S] (${STAGE_IDS.map((sid) => stgChar(sid)).join('')})`, 164, 0);
   // M11 gold shop (VS-style meta): banked gold finally spends. Keyboard Q/W/E/R
   // buys a row; on a phone, TAP the row. Rows match shopRowY() for hit-testing.
   center(COARSE ? 'UPGRADES: TAP A ROW' : 'UPGRADES QWER  P PAUSE  M SOUND  N MUSIC  F FS', 176, 2);

@@ -78,6 +78,7 @@ export function mkGame(seed: number): Game {
     flush: null, flushResolved: false, flushed: false, wall: [],
     options: [], flashT: 0, shake: 0, evolutionT: 0, evolved: false,
     kills: 0, bossKilled: 0,
+    flushKilled: false, flushBack: 0,
     // M13: base 1.0/100 here — recomputeStats() (called by startRun) is now
     // the single source of truth for char+passive+shop stats (the pre-M13
     // baked-bonus convention meant recompute could never see new char bonuses;
@@ -136,6 +137,7 @@ export function endRun(won: boolean, flushed: boolean): void {
   if (G.bossKilled >= 3) unlocks.push('boss3'); // M7: Plunger
   if (G.bossKilled >= 5) unlocks.push('lintking'); // M13: The Compost stage (beat the Lint King)
   if (won && G.stage === 'compost') unlocks.push('compostwin'); // M21: The Sewers stage (clear The Compost — one rung deeper)
+  if (G.flushKilled) unlocks.push('flushkill'); // M22: The Septic Tank (kill The Final Flush anywhere — the VS reaper-kill rung; counts even if you get flushed later)
   if (G.kills >= 1000) unlocks.push('minekill'); // M13: Cheese
   if (G.gold >= 400) unlocks.push('goldrun'); // M13: Onion (400 gold in one run)
   lastUnlocks = [];

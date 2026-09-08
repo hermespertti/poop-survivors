@@ -39,18 +39,24 @@ export const CHARACTERS: Record<string, {
               unlock: 'goldrun', unlockDesc: 'collect 400 gold in one run' },
 };
 
-export const STAGES: Record<string, { name: string; unlock: string; tileA: string; tileB: string; accent: string; detail: number; scriptShift: number; waveMult?: number }> = {
-  kitchen:  { name: 'The Kitchen',   unlock: 'default',  tileA: '#f3e2b8', tileB: '#e8cf94', accent: '#c9a35e', detail: 3,   scriptShift: 0 },
-  bathroom: { name: 'The Bathroom',  unlock: 'survive5', tileA: '#cfe8f6', tileB: '#a5cde6', accent: '#7fb3cf', detail: 1,   scriptShift: 60 },
-  compost:  { name: 'The Compost',   unlock: 'lintking', tileA: '#7a6a3f', tileB: '#655733', accent: '#4a3f24', detail: 2,   scriptShift: 120 },
+export const STAGES: Record<string, { name: string; unlock: string; tileA: string; tileB: string; accent: string; detail: number; scriptShift: number; waveMult?: number; letter?: string; earlyFlush?: number }> = {
+  kitchen:  { name: 'The Kitchen',   unlock: 'default',  tileA: '#f3e2b8', tileB: '#e8cf94', accent: '#c9a35e', detail: 3,   scriptShift: 0, letter: 'K' },
+  bathroom: { name: 'The Bathroom',  unlock: 'survive5', tileA: '#cfe8f6', tileB: '#a5cde6', accent: '#7fb3cf', detail: 1,   scriptShift: 60, letter: 'B' },
+  compost:  { name: 'The Compost',   unlock: 'lintking', tileA: '#7a6a3f', tileB: '#655733', accent: '#4a3f24', detail: 2,   scriptShift: 120, letter: 'C' },
   // M21: THE SEWERS — the deepest stage, one rung below The Compost in the
   // unlock ladder (survive → beat the Lint King → clear Compost → Sewers).
   // The script hits 3 min early (the kitchen's 3:00 pressure at 0:00, Boulder
   // at 22:00 not 25:00), waves run ×1.25 fatter, floor is wet concrete+mold.
-  sewers:   { name: 'The Sewers',    unlock: 'compostwin', tileA: '#4a5a4a', tileB: '#3d4c3f', accent: '#2c3a2e', detail: 4,   scriptShift: 180, waveMult: 1.25 },
+  sewers:   { name: 'The Sewers',    unlock: 'compostwin', tileA: '#4a5a4a', tileB: '#3d4c3f', accent: '#2c3a2e', detail: 4,   scriptShift: 180, waveMult: 1.25, letter: 'S' },
+  // M22: THE SEPTIC TANK — the bottom of the plumbing, where the Flush was
+  // born. Unlock: flushkill (kill The Final Flush on any stage — the VS
+  // reaper-kill rung). The gimmick: the Flush hunts from 20:00 (earlyFlush)
+  // and KILLING it does NOT end the run — a gold consolation and you keep
+  // surviving with it circling back at 30:00. Script 5 min early, waves ×1.5.
+  septic:   { name: 'The Septic Tank', unlock: 'flushkill', tileA: '#3a3226', tileB: '#2f2820', accent: '#1f1a14', detail: 5,   scriptShift: 300, waveMult: 1.5, letter: 'T', earlyFlush: 1200 },
 };
 
-export const STAGE_IDS = ['kitchen', 'bathroom', 'compost', 'sewers'];
+export const STAGE_IDS = ['kitchen', 'bathroom', 'compost', 'sewers', 'septic'];
 
 export const UPGRADES: { id: string; name: string; desc: string; price: number; max: number }[] = [
   { id: 'hp',   name: 'IRON STOMACH', desc: '+15 max HP each',   price: 250, max: 5 },

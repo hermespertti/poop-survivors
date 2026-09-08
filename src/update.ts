@@ -364,7 +364,14 @@ const stepBoss: Step = (p) => {
 // The flush hp does NOT time-scale (unlike bosses) — a 30:00 player's build
 // must be able to kill it in ~8s of contact window, so it stays flat.
 const stepFlush: Step = (p) => {
-  if (!G.flush && G.time >= RUN_LEN && !G.flushResolved) {
+  // M22 SEPTIC: the Flush hunts EARLY (stage.earlyFlush) and REFORMS 60s
+  // after you kill it (flushBack) — it's the tank's resident horror, not the
+  // clock's executioner. Other stages: unchanged 30:00 spawn.
+  const stage = STAGES[G.stage];
+  const spawnT = stage?.earlyFlush || RUN_LEN;
+  const reform = G.flushBack > 0 && G.time >= G.flushBack;
+  if (!G.flush && ((G.time >= spawnT && !G.flushResolved) || reform)) {
+    if (reform) G.flushBack = 0;
     const st = BOSS_STATS.flush;
     G.flush = {
       x: Math.max(20, Math.min(WORLD_W - 20, G.player.x + Math.cos(0) * 240)),

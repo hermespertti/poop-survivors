@@ -148,6 +148,9 @@ assertFireCoverage();
   },
   spawnItem: (kind?: string) => { spawnItem(); if (kind && G.items.length) G.items[G.items.length - 1].kind = (kind as 'gold' | 'heal'); return (win as any).__cap.state(); },
   setFlushHp: (hp: number) => { if (G.flush) { G.flush.hp = hp; G.flush.maxHp = Math.max(G.flush.maxHp, hp); } return (win as any).__cap.state(); },
+  // M22: septic-tank probe (the state() JSON is fingerprint-frozen — new
+  // read-only fields ride on their own accessor so `815bf2e5…` survives)
+  septicState: () => ({ flushKilled: G.flushKilled, flushBack: +G.flushBack.toFixed(2) }),
   setWallHp: (i: number, hp: number) => { if (G.wall[i]) { G.wall[i].hp = hp; G.wall[i].maxHp = Math.max(G.wall[i].maxHp, hp); } return (win as any).__cap.state(); },
   wallList: () => G.wall.map((e) => ({ x: e.x, z: e.z, hp: +e.hp.toFixed(1), d: Math.hypot(e.x - G.player.x, e.z - G.player.z) })),
   itemList: () => G.items.map((it) => ({ x: it.x, z: it.z, kind: it.kind })),
@@ -176,6 +179,7 @@ assertFireCoverage();
     return { ok: true, stage: selectedStage };
   },
   metaReset: () => { resetMeta(); return (win as any).__cap.state(); },
+  metaGet: () => ({ unlocked: [...META.unlocked] }), // M22: read unlocks without touching state() (fingerprint-frozen)
   metaGive: (unlock: string) => { if (!META.unlocked.includes(unlock)) META.unlocked.push(unlock); saveMeta(META); return (win as any).__cap.state(); },
   metaGold: (n: number) => { META.gold = n; saveMeta(META); return (win as any).__cap.state(); },
   metaUpgrade: (id: string, lvl = 1) => { META.upgrades[id] = lvl; saveMeta(META); return (win as any).__cap.state(); }, // M11: seed shop levels (soak harness)

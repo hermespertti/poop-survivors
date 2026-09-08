@@ -287,7 +287,8 @@ bars) and played by a `Chip` synth that emulates the APU channels.
 | **M18** | dead-evolution fix: `slakelake` + `halo` were registered with stats but had NO `fireWeapons()` branch — evolution chests silently disarmed the player (root cause of avocado's boss med 1). Slime Lake = drag-lake at nearest enemy (`Zone.drag`, kbResist-aware pull); Halo = full damaging disc; m4 B1b/B1c lock every evolved weapon firing + the drag | baseline 5/5 unchanged; avocado boss med 1→4, surv 0/5→2/5; full gate 248/0 across 7 suites (m4 78→96) — **DONE 2026-09-07 (§31)** |
 | **M19** | architecture split: phase 1 extracted all pure data (types/constants/tables — balance edits no longer touch mechanics files), phase 2 split the logic (game/update/systems/combat/spawner/levelup/canvas/input/overlays/render; main.ts 2419→210 lines); `test/fingerprint.mjs` oracle freezes the sim at 5 checkpoints × 4 seeds (`815bf2e5…`) so any RNG-order shift fails loud; split was machine-generated (tools/phase2/wire/setters) with a line-conservation proof | tsc 0 errors; fingerprint byte-identical across both phases; full gate 248/0; post-split balance soak reproduces M18 numbers — **DONE 2026-09-07 (§32)** |
 | **M20** | fire registry + update() pipeline: every weapon behavior moved to `FIRE[id]` handlers in `src/fire.ts` with a boot-time `assertFireCoverage()` guard (the M18 registered-but-dead-weapon bug class, now caught at boot via `__cap.fireMissing()` + new m4 B1b2 assertion); `update()`'s 444-line body is a 13-pass named pipeline in frozen order, mid-function endRun returns → `return false` pipeline stops (systems.ts 438→146) | tsc 0 errors; fingerprint `815bf2e5…` byte-identical through every step; guard self-caught missing minelord/chainstorm keys on first run (worked as designed); full gate **249/0** across 7 suites — **DONE 2026-09-08 (§33)** |
-| **M21** | stage 4 — THE SEWERS: the deepest stage one rung below Compost (unlock `compostwin` = clear The Compost); scriptShift 180 (kitchen's 3:00 pressure at 0:00, Boulder at 22:00), first stage with `waveMult` (waves ×1.25, the STAGES row now carries it), wet-concrete+mold floor (detail 4 — kitchen's detail 3 was the else-fallback, so new stages claim fresh numbers), title [S] cycle + tap cycle + 4-slot stage row | tsc 0 errors; fingerprint unchanged (sewers never selected in kitchen-oracle runs); 3 new m4 assertions (locked key, select+start, 180s shift); full gate **252/0** across 7 suites — **DONE 2026-09-08 (§34)** |
+| **M21** | stage 4 — THE SEWERS: the deepest stage one rung below Compost (unlock `compostwin` = clear The Compost); scriptShift 180 (kitchen's 3:00 pressure at 0:00), first stage with `waveMult` (waves ×1.25, the STAGES row now carries it), wet-concrete+mold floor (detail 4 — kitchen's detail 3 was the else-fallback, so new stages claim fresh numbers), title [S] cycle + tap cycle + 4-slot stage row | tsc 0 errors; fingerprint unchanged (sewers never selected in kitchen-oracle runs); 3 new m4 assertions (locked key, select+start, 180s shift); full gate **252/0** across 7 suites — **DONE 2026-09-08 (§34)** |
+| **M22** | stage 5 — THE SEPTIC TANK: the bottom of the plumbing (unlock `flushkill` = kill The Final Flush anywhere, reaper-kill energy; counts even if you get flushed after). First stage to mutate the ENDGAME RULE: the Flush hunts from 20:00 (`earlyFlush`) and killing it does NOT end the run — +250g consolation, it REFORMS 60s later (`flushBack`) and hunts until you survive to 30:00. Script 5 min early, waves ×1.5, sludge+bubble floor (detail 5). New Game fields `flushKilled`/`flushBack`; new probes `septicState()`/`metaGet()` ride OUTSIDE the fingerprint-frozen `state()` JSON | fingerprint `815bf2e5…` unchanged (kitchen path inert); 6 new m4 B5b assertions (lock, real-kill unlock, early hunt, survive-the-kill, reform); full gate **258/0** across 7 suites — **DONE 2026-09-08 (§35)** |
 
 ## 15. Decisions (locked 2026-08-31, user)
 
@@ -1185,3 +1186,32 @@ is inert under the oracle by construction; `815bf2e5…` unchanged confirms no
 accidental bleed. Sewers behavior is locked by 3 new m4 B5 assertions
 (locked-key error string, select+run-start after unlock, crumb active at 0:00
 from the 180s shift).
+
+## 35. M22 stage 5 — THE SEPTIC TANK (2026-09-08)
+
+The bottom of the plumbing, where the Flush was born — and the first stage
+that mutates the ENDGAME RULE itself, not just the script timing:
+
+- **Unlock `flushkill`**: kill The Final Flush on ANY stage — the VS
+  reaper-kill rung. `hitFlush` sets `G.flushKilled`; `endRun` banks the
+  unlock (it counts even if you get flushed later in the same run — the
+  achievement is the kill, not the ending).
+- **The gimmick (`earlyFlush: 1200`)**: the Flush hunts from 20:00.
+  **Killing it does NOT end the run** — it's the tank's resident horror,
+  not the clock's executioner: +250g consolation, and it REFORMS 60s later
+  (`flushBack`, respawned by `stepFlush`) and keeps hunting until you
+  survive to 30:00. Touch → flushed still applies. The stage is a 10-minute
+  two-flush gauntlet.
+- Script shift 300 (droplet+crumb from 0:00, mops at 2:00, splitters at
+  17:00, boulders at 20:00 — right as the second Flush cycles back),
+  `waveMult` 1.5, sludge-blob + rising-bubble floor (detail 5).
+- **Oracle discipline**: `state()` JSON is fingerprint-hashed — the new
+  fields ride on separate `septicState()` / `metaGet()` probes so
+  `815bf2e5…` survives untouched (it did: kitchen path fully inert).
+- Ladder now: Kitchen → Bathroom (survive) → Compost (Lint King) →
+  Sewers (clear Compost) → **Septic Tank (kill the Flush)**. Five stages,
+  five rungs, each with its own pressure signature.
+
+Six new m4 B5b assertions: locked-key, real-kill-banks-unlock (not
+metaGive), early hunt at 20:00, survive-the-kill + gold consolation,
+reform timer, reform happens.

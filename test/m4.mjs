@@ -323,6 +323,67 @@ ok(stageProbe.sewersLocked.err === 'locked: compostwin', `sewers locked until co
 ok(stageProbe.sewersOk.ok === true && stageProbe.sewersStage === 'sewers', 'sewers selectable after clearing The Compost, run starts on it (M21)');
 ok(stageProbe.sewersKinds0.includes('crumb'), `sewers shifts the script 180s early: crumb active at 0:00 (M21, got ${stageProbe.sewersKinds0})`);
 
+// B5b (M22): THE SEPTIC TANK — locked behind flushkill; Flush hunts from
+// 20:00; killing it does NOT end the run (gold consolation + reform timer).
+const septicProbe = await page.evaluate(async () => {
+  const c = window.__cap;
+  c.metaReset();
+  const locked = c.selectStage('septic');
+  // unlock via a REAL flush kill on kitchen (tests the flushkill event too)
+  c.restartPlay(1212);
+  c.giveWeapon('superfart', 8);
+  c.giveWeapon('crackerring', 8);
+  c.spawnFlush();
+  c.setFlushHp(100);
+  c.set('hp', 100000);
+  c.freeze();
+  const s0 = c.state();
+  c.set('pos', [s0.flush.x - 70, s0.flush.z]);
+  let won = false;
+  for (let i = 0; i < 600; i++) { c.step(); if (c.state().mode === 'win') { won = true; break; } }
+  const unlockedByKill = c.metaGet().unlocked.includes('flushkill');
+  c.unfreeze();
+  // now the septic gimmick proper (unlock was earned above by the real kill)
+  const okSel = c.selectStage('septic');
+  c.restartPlay(77);
+  const stageName = c.state().stage;
+  c.freeze();
+  // early hunt: time just past 20:00 (frozen, no sim steps), one step → spawn
+  c.set('time', 1200.01);
+  c.step();
+  flushEarly = !!c.state().flush;
+  // kill test on a fresh controllable Flush (spawnFlush parks it +240u;
+  // m3 recipe: ring band reaches at 70u, the ring kills it before contact)
+  c.restartPlay(77);
+  c.freeze();
+  c.set('hp', 100000);
+  c.giveWeapon('crackerring', 8); // the m3 kill recipe — ring outruns the flush
+  c.spawnFlush(); // fresh flush at +240u
+  const g0 = c.state().gold;
+  c.setFlushHp(50);
+  c.set('pos', [c.state().flush.x - 70, c.state().flush.z]); // m3 recipe: in ring band, ring kills before contact
+  let stillPlaying = false, backSet = false, goldGain = 0;
+  for (let i = 0; i < 600; i++) {
+    c.step();
+    const s = c.state();
+    const ss = c.septicState();
+    if (ss.flushBack > 0) { backSet = true; goldGain = s.gold - g0; break; }
+    if (s.mode !== 'play') break;
+  }
+  stillPlaying = c.state().mode === 'play';
+  // reform: jump past the reform time, flush must be back
+  c.set('time', c.septicState().flushBack + 0.01);
+  c.step();
+  const reform = !!c.state().flush;
+  return { locked, won, unlockedByKill, okSel, stageName, flushEarly, stillPlaying, backSet, goldGain, reform };
+});
+ok(septicProbe.locked.err === 'locked: flushkill', `septic locked until flushkill (M22, ${JSON.stringify(septicProbe.locked)})`);
+ok(septicProbe.won && septicProbe.unlockedByKill, 'flush kill on kitchen wins AND banks the flushkill unlock (M22)');
+ok(septicProbe.okSel.ok === true && septicProbe.stageName === 'septic', 'septic selectable after flushkill, run starts on it (M22)');
+ok(septicProbe.flushEarly, 'septic: the Flush hunts from 20:00, not 30:00 (M22)');
+ok(septicProbe.stillPlaying && septicProbe.backSet && septicProbe.goldGain >= 200, `septic: killing the Flush does NOT end the run — gold consolation + reform timer (M22, still=${septicProbe.stillPlaying} back=${septicProbe.backSet} gold=${septicProbe.goldGain})`);
+ok(septicProbe.reform, 'septic: the slain Flush reforms 60s later and hunts again (M22)');
+
 // B6: meta banks gold
 const metaProbe = await page.evaluate(() => {
   const c = window.__cap;
