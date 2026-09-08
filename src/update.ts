@@ -19,7 +19,7 @@ import { META } from './meta';
 import { musicIntensity, muted, sfx, toggleMusicMute, toggleMute } from './sfx';
 import { pickKind, spawnEnemy, spawnItem, spawnSpasmWall, spawnWave } from './spawner';
 import { damageWall, fireWeapons, hitBoss, hitFlush, resolveChest, spawnBoss } from './systems';
-import { CHARACTERS, UPGRADES } from './tables/chars';
+import { CHARACTERS, STAGES, UPGRADES } from './tables/chars';
 import { BOSS_SCHEDULE, BOSS_STATS } from './tables/enemies';
 import { Enemy, Game } from './types';
 
@@ -52,7 +52,7 @@ function stepInput(): void {
       if (ch.unlock === 'default' || META.unlocked.includes(ch.unlock)) setSelectedChar(id);
     }
     if (justPressed('s')) {
-      cycleStage(); // M13: 3-stage cycle (keyboard mirrors the tap)
+      cycleStage(); // M13/M21: stage cycle (keyboard mirrors the tap)
     }
     // M11: shop buys on the keyboard (QWER mirror the title rows)
     const upIdx = keyIndex('q', 'w', 'e', 'r');
@@ -452,7 +452,8 @@ const stepDirector: Step = () => {
   const waveNext = Math.floor((G.time - 60) / 120) + 1;
   if (G.time >= 60 && G.time < 1620 && G.waveIdx < waveNext) {
     G.waveIdx = waveNext;
-    const size = 12 + Math.floor(G.time / 60) * 3; // M13: 8+2/min → 12+3/min
+    let size = 12 + Math.floor(G.time / 60) * 3; // M13: 8+2/min → 12+3/min
+    size = Math.round(size * (STAGES[G.stage]?.waveMult || 1)); // M21: sewers ×1.25 (kitchen/others ×1 — untouched)
     spawnWave(Math.min(45, size)); // M13: cap 30 → 45
   }
   // density spike: 30s of doubled spawn rate (first at 12:00, every 2 min after)

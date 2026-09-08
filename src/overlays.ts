@@ -42,6 +42,13 @@ export function drawFloor(cx: number, cy: number): void {
           // compost: organic mottling — darker patches + leaf flecks
           if (h % 9 === 0) ctx.fillRect(tx * TILE - cx + (h % 14), ty * TILE - cy + ((h >> 2) % 14), 2, 1);
           if (h % 17 === 0) ctx.fillRect(tx * TILE - cx + ((h >> 1) % 16), ty * TILE - cy + ((h >> 4) % 16), 1, 1);
+        } else if (st.detail === 4) {
+          // M21 sewers: wet-concrete streaks + heavier mold than compost
+          // (detail 3 is kitchen — the crumb branch is the else-fallback;
+          // new stages must claim a fresh detail number)
+          if (h % 7 === 0) ctx.fillRect(tx * TILE - cx, ty * TILE - cy + (h % 16), 16, 1);
+          if (h % 5 === 0) ctx.fillRect(tx * TILE - cx + (h % 12), ty * TILE - cy + ((h >> 2) % 12), 2, 2);
+          if (h % 19 === 0) ctx.fillRect(tx * TILE - cx + ((h >> 1) % 16), ty * TILE - cy + ((h >> 3) % 16), 1, 1);
         } else {
           // kitchen (M13): sparse crumbs + a few flour streaks
           if (h % 15 === 0) ctx.fillRect(tx * TILE - cx + (h % 15) + 1, ty * TILE - cy + ((h >> 2) % 15) + 1, 1, 1);
@@ -298,7 +305,7 @@ export function drawTitle(t: number): void {
   center('CH: ' + line.trim(), 152, 0);
   // stage select: S (tap the right half on a phone) — M13: three stages
   const stgChar = (id: string) => (STAGES[id].unlock === 'default' || META.unlocked.includes(STAGES[id].unlock)) ? id[0].toUpperCase() : '?';
-  center('STAGE: ' + STAGES[selectedStage].name.toUpperCase() + `  [S] (${stgChar('kitchen')}${stgChar('bathroom')}${stgChar('compost')})`, 164, 0);
+  center('STAGE: ' + STAGES[selectedStage].name.toUpperCase() + `  [S] (${stgChar('kitchen')}${stgChar('bathroom')}${stgChar('compost')}${stgChar('sewers')})`, 164, 0);
   // M11 gold shop (VS-style meta): banked gold finally spends. Keyboard Q/W/E/R
   // buys a row; on a phone, TAP the row. Rows match shopRowY() for hit-testing.
   center(COARSE ? 'UPGRADES: TAP A ROW' : 'UPGRADES QWER  P PAUSE  M SOUND  N MUSIC  F FS', 176, 2);

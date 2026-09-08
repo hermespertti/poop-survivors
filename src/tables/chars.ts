@@ -39,13 +39,18 @@ export const CHARACTERS: Record<string, {
               unlock: 'goldrun', unlockDesc: 'collect 400 gold in one run' },
 };
 
-export const STAGES: Record<string, { name: string; unlock: string; tileA: string; tileB: string; accent: string; detail: number; scriptShift: number }> = {
+export const STAGES: Record<string, { name: string; unlock: string; tileA: string; tileB: string; accent: string; detail: number; scriptShift: number; waveMult?: number }> = {
   kitchen:  { name: 'The Kitchen',   unlock: 'default',  tileA: '#f3e2b8', tileB: '#e8cf94', accent: '#c9a35e', detail: 3,   scriptShift: 0 },
   bathroom: { name: 'The Bathroom',  unlock: 'survive5', tileA: '#cfe8f6', tileB: '#a5cde6', accent: '#7fb3cf', detail: 1,   scriptShift: 60 },
   compost:  { name: 'The Compost',   unlock: 'lintking', tileA: '#7a6a3f', tileB: '#655733', accent: '#4a3f24', detail: 2,   scriptShift: 120 },
+  // M21: THE SEWERS — the deepest stage, one rung below The Compost in the
+  // unlock ladder (survive → beat the Lint King → clear Compost → Sewers).
+  // The script hits 3 min early (the kitchen's 3:00 pressure at 0:00, Boulder
+  // at 22:00 not 25:00), waves run ×1.25 fatter, floor is wet concrete+mold.
+  sewers:   { name: 'The Sewers',    unlock: 'compostwin', tileA: '#4a5a4a', tileB: '#3d4c3f', accent: '#2c3a2e', detail: 4,   scriptShift: 180, waveMult: 1.25 },
 };
 
-export const STAGE_IDS = ['kitchen', 'bathroom', 'compost'];
+export const STAGE_IDS = ['kitchen', 'bathroom', 'compost', 'sewers'];
 
 export const UPGRADES: { id: string; name: string; desc: string; price: number; max: number }[] = [
   { id: 'hp',   name: 'IRON STOMACH', desc: '+15 max HP each',   price: 250, max: 5 },

@@ -120,7 +120,7 @@ canvasEl.addEventListener('pointerdown', (e: PointerEvent) => {
       sfx('pop'); e.preventDefault(); return;
     }
     if (v.z >= 162 && v.z < 173 && v.x > 112) {
-      cycleStage(); sfx('pop'); // M13: 3-stage cycle (kitchen→bathroom→compost)
+      cycleStage(); sfx('pop'); // M13/M21: stage cycle (kitchen→bathroom→compost→sewers)
       e.preventDefault(); return;
     }
   }

@@ -135,6 +135,7 @@ export function endRun(won: boolean, flushed: boolean): void {
   if (G.kills >= 500) unlocks.push('kills500'); // Avocado
   if (G.bossKilled >= 3) unlocks.push('boss3'); // M7: Plunger
   if (G.bossKilled >= 5) unlocks.push('lintking'); // M13: The Compost stage (beat the Lint King)
+  if (won && G.stage === 'compost') unlocks.push('compostwin'); // M21: The Sewers stage (clear The Compost — one rung deeper)
   if (G.kills >= 1000) unlocks.push('minekill'); // M13: Cheese
   if (G.gold >= 400) unlocks.push('goldrun'); // M13: Onion (400 gold in one run)
   lastUnlocks = [];

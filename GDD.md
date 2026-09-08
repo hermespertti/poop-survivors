@@ -287,6 +287,7 @@ bars) and played by a `Chip` synth that emulates the APU channels.
 | **M18** | dead-evolution fix: `slakelake` + `halo` were registered with stats but had NO `fireWeapons()` branch — evolution chests silently disarmed the player (root cause of avocado's boss med 1). Slime Lake = drag-lake at nearest enemy (`Zone.drag`, kbResist-aware pull); Halo = full damaging disc; m4 B1b/B1c lock every evolved weapon firing + the drag | baseline 5/5 unchanged; avocado boss med 1→4, surv 0/5→2/5; full gate 248/0 across 7 suites (m4 78→96) — **DONE 2026-09-07 (§31)** |
 | **M19** | architecture split: phase 1 extracted all pure data (types/constants/tables — balance edits no longer touch mechanics files), phase 2 split the logic (game/update/systems/combat/spawner/levelup/canvas/input/overlays/render; main.ts 2419→210 lines); `test/fingerprint.mjs` oracle freezes the sim at 5 checkpoints × 4 seeds (`815bf2e5…`) so any RNG-order shift fails loud; split was machine-generated (tools/phase2/wire/setters) with a line-conservation proof | tsc 0 errors; fingerprint byte-identical across both phases; full gate 248/0; post-split balance soak reproduces M18 numbers — **DONE 2026-09-07 (§32)** |
 | **M20** | fire registry + update() pipeline: every weapon behavior moved to `FIRE[id]` handlers in `src/fire.ts` with a boot-time `assertFireCoverage()` guard (the M18 registered-but-dead-weapon bug class, now caught at boot via `__cap.fireMissing()` + new m4 B1b2 assertion); `update()`'s 444-line body is a 13-pass named pipeline in frozen order, mid-function endRun returns → `return false` pipeline stops (systems.ts 438→146) | tsc 0 errors; fingerprint `815bf2e5…` byte-identical through every step; guard self-caught missing minelord/chainstorm keys on first run (worked as designed); full gate **249/0** across 7 suites — **DONE 2026-09-08 (§33)** |
+| **M21** | stage 4 — THE SEWERS: the deepest stage one rung below Compost (unlock `compostwin` = clear The Compost); scriptShift 180 (kitchen's 3:00 pressure at 0:00, Boulder at 22:00), first stage with `waveMult` (waves ×1.25, the STAGES row now carries it), wet-concrete+mold floor (detail 4 — kitchen's detail 3 was the else-fallback, so new stages claim fresh numbers), title [S] cycle + tap cycle + 4-slot stage row | tsc 0 errors; fingerprint unchanged (sewers never selected in kitchen-oracle runs); 3 new m4 assertions (locked key, select+start, 180s shift); full gate **252/0** across 7 suites — **DONE 2026-09-08 (§34)** |
 
 ## 15. Decisions (locked 2026-08-31, user)
 
@@ -1156,3 +1157,31 @@ as designed, at boot, three tests. Fixed; the oracle never moved.
 
 Verified: tsc 0 errors; fingerprint `815bf2e5…` byte-identical through every
 step of the change; vite build clean; full gate green (§14 M20 row).
+
+## 34. M21 stage 4 — THE SEWERS (2026-09-08)
+
+Stage 3 (Compost) shipped in M13; this is the fourth and deepest rung of the
+VS-style unlock ladder, all-data where the M19/M20 architecture lets it be:
+
+- **`STAGES.sewers`**: dark wet-green palette (tileA/tileB/accent),
+  `scriptShift: 180` — the whole director script hits 3 min early (kitchen's
+  3:00 pressure at 0:00; Boulder, a 25:00 kind, is live at 22:00).
+- **`waveMult` (new STAGES field, sewers-only 1.25)**: the first stage that
+  makes waves *fatter*, not just earlier — the wave-size line in
+  `stepDirector` multiplies by the stage row (kitchen/bathroom/compost ×1,
+  deterministically untouched).
+- **Unlock `compostwin`**: clear The Compost (win at 30:00 there) to open
+  the Sewers — the ladder reads survive → Lint King → clear Compost →
+  Sewers. Shown on the achievement wall as THE SEWERS.
+- **Floor detail 4**: wet-concrete streaks + heavier mold than compost.
+  (detail 3 was kitchen's, and kitchen is also the else-fallback — new
+  stages must claim a fresh number, documented in the branch comment.)
+- Title screen: `[S]` cycle covers 4 stages (K/B/C/S slots), keyboard + tap
+  both flow through `STAGE_IDS` — zero input-code changes needed (M19 split
+  paying rent).
+
+Oracle note: kitchen is the fingerprint seed-path stage, so every M21 change
+is inert under the oracle by construction; `815bf2e5…` unchanged confirms no
+accidental bleed. Sewers behavior is locked by 3 new m4 B5 assertions
+(locked-key error string, select+run-start after unlock, crumb active at 0:00
+from the 180s shift).

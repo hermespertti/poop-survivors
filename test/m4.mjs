@@ -298,7 +298,18 @@ const stageProbe = await page.evaluate(() => {
   c.clearEnemies();
   for (let i = 0; i < 48; i++) c.spawn(1); // 48: crumb is only 0.4 weight — 12 rolls has a real P(zero)
   const compostKinds0 = (c.lastKinds() || []).join(',');
-  return { locked, okr, stage: st.stage, bathKinds0, kitKinds0, compostLocked, compostOk, compostStage, compostKinds0 };
+  // M21: THE SEWERS — locked until The Compost is cleared (compostwin),
+  // shifts the script 180s (crumb, a 2:00 kitchen kind, active at t=0 like
+  // compost), and rides the deepest palette.
+  const sewersLocked = c.selectStage('sewers');
+  c.metaGive('compostwin');
+  const sewersOk = c.selectStage('sewers');
+  c.restart(7);
+  const sewersStage = c.state().stage;
+  c.clearEnemies();
+  for (let i = 0; i < 48; i++) c.spawn(1);
+  const sewersKinds0 = (c.lastKinds() || []).join(',');
+  return { locked, okr, stage: st.stage, bathKinds0, kitKinds0, compostLocked, compostOk, compostStage, compostKinds0, sewersLocked, sewersOk, sewersStage, sewersKinds0 };
 });
 ok(stageProbe.locked.err === 'locked: survive5', `bathroom locked until survive5 (${JSON.stringify(stageProbe.locked)})`);
 ok(stageProbe.okr.ok === true && stageProbe.stage === 'bathroom', 'bathroom selectable after unlock, run starts on it');
@@ -308,6 +319,9 @@ ok(stageProbe.compostLocked.err === 'locked: lintking', `compost locked until th
 ok(stageProbe.compostOk.ok === true && stageProbe.compostStage === 'compost', 'compost selectable after unlock, run starts on it (M13)');
 ok(stageProbe.compostKinds0.includes('crumb'), `compost shifts the script 120s early: crumb active at 0:00 (M13, got ${stageProbe.compostKinds0})`);
 ok(!stageProbe.kitKinds0.includes('crumb'), `kitchen control: no crumb at 0:00 (M13, got ${stageProbe.kitKinds0})`);
+ok(stageProbe.sewersLocked.err === 'locked: compostwin', `sewers locked until compostwin (M21, ${JSON.stringify(stageProbe.sewersLocked)})`);
+ok(stageProbe.sewersOk.ok === true && stageProbe.sewersStage === 'sewers', 'sewers selectable after clearing The Compost, run starts on it (M21)');
+ok(stageProbe.sewersKinds0.includes('crumb'), `sewers shifts the script 180s early: crumb active at 0:00 (M21, got ${stageProbe.sewersKinds0})`);
 
 // B6: meta banks gold
 const metaProbe = await page.evaluate(() => {
