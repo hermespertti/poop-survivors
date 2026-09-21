@@ -4,7 +4,7 @@ import { setMuteMsgT, setPaused, setSelectedChar } from './game';
 
 import { canvasEl, clientToView, clientToWorld, toggleFullscreen } from './canvas';
 import { STICK_R, VIEW_H } from './constants';
-import { G, buyUpgrade, cycleStage, muteMsgT, paused, selectedChar, startRun } from './game';
+import { G, buyUpgrade, cycleStage, muteMsgT, paused, selectedChar, setShowAch, showAch, startRun } from './game';
 import { pickOption } from './levelup';
 import { META } from './meta';
 import { shopRowY } from './overlays';
@@ -103,7 +103,14 @@ canvasEl.addEventListener('pointerdown', (e: PointerEvent) => {
   // STAGE lines also tap-cycle (a phone had no way to pick before). Zones are
   // tuned to the drawTitle row baselines (152 CH, 164 STAGE, 174 header,
   // 188+i*10 shop) so a tap on a row never leaks into the one above.
+  if (COARSE && G.mode === 'title' && showAch) {
+    setShowAch(false); // tap anywhere closes the list
+    e.preventDefault(); return;
+  }
   if (COARSE && G.mode === 'title') {
+    // M25: a tap on the hint line (below the shop header, above the first
+    // row's hit zone) opens the achievements list
+    if (v.z >= 174 && v.z < shopRowY(0) - 4) { setShowAch(true); sfx('pop'); e.preventDefault(); return; }
     for (let i = 0; i < UPGRADES.length; i++) {
       if (v.z >= shopRowY(i) - 4 && v.z < shopRowY(i) + 7) { buyUpgrade(UPGRADES[i].id); e.preventDefault(); return; }
     }

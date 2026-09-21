@@ -7,7 +7,7 @@ import { camFXy } from './render';
 import { setFrozen, setSelectedChar, setSelectedStage } from './game';
 
 import { ctx, fitCanvas } from './canvas';
-import { G, frozen, lastEvo, orbitPos, paused, recomputeStats, selectedChar, selectedStage, startRun } from './game';
+import { G, frozen, lastEvo, orbitPos, paused, recomputeStats, selectedChar, selectedStage, setShowAch, showAch, startRun } from './game';
 import { COARSE, botDir, currentMove, stick } from './input';
 import { gainXp, pickOption } from './levelup';
 import { camFXx, render } from './render';
@@ -180,6 +180,7 @@ assertFireCoverage();
   },
   metaReset: () => { resetMeta(); return (win as any).__cap.state(); },
   metaGet: () => ({ unlocked: [...META.unlocked] }), // M22: read unlocks without touching state() (fingerprint-frozen)
+  achOpen: () => ({ showAch, got: [...META.achievements] }), // M25: probe (outside fingerprint-frozen state())
   metaGive: (unlock: string) => { if (!META.unlocked.includes(unlock)) META.unlocked.push(unlock); saveMeta(META); return (win as any).__cap.state(); },
   metaGold: (n: number) => { META.gold = n; saveMeta(META); return (win as any).__cap.state(); },
   metaUpgrade: (id: string, lvl = 1) => { META.upgrades[id] = lvl; saveMeta(META); return (win as any).__cap.state(); }, // M11: seed shop levels (soak harness)

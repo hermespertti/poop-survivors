@@ -11,12 +11,18 @@ import { META, saveMeta } from './meta';
 import { mulberry32 } from './rng';
 import { sfx } from './sfx';
 import { CHARACTERS, STAGES, STAGE_IDS, UPGRADES } from './tables/chars';
-import { xpToNext } from './tables/weapons';
+import { WEAPONS, xpToNext } from './tables/weapons';
 import { Game } from './types';
 
 export let selectedChar = 'crouton';
 
 export let selectedStage = 'kitchen';
+// M25: NEW achievements this run (display on the end screen + fanfare).
+export let lastAch: string[] = [];
+export function clearLastAch(): void { lastAch = []; }
+// M25: achievements overlay flag (UI state, deliberately OUTSIDE the sim/fingerprint)
+export let showAch = false;
+export function setShowAch(v: boolean): void { showAch = v; }
 // M11: run-end display state (set in endRun, cleared in startRun) — the
 // pre-M11 death/win screen was 3 lines of brown text; now it's stats, gold
 // banked, best-time records, and a fanfare for anything THIS run unlocked.
@@ -78,7 +84,7 @@ export function mkGame(seed: number): Game {
     flush: null, flushResolved: false, flushed: false, wall: [],
     options: [], flashT: 0, shake: 0, evolutionT: 0, evolved: false,
     kills: 0, bossKilled: 0,
-    flushKilled: false, flushBack: 0,
+    flushKilled: false, flushBack: 0, flushWave: 0,
     // M13: base 1.0/100 here — recomputeStats() (called by startRun) is now
     // the single source of truth for char+passive+shop stats (the pre-M13
     // baked-bonus convention meant recompute could never see new char bonuses;
@@ -129,9 +135,34 @@ export function endRun(won: boolean, flushed: boolean): void {
   META.bestTime = Math.max(META.bestTime, Math.floor(G.time));
   newBestTime = Math.floor(G.time) > prevBest && Math.floor(G.time) > 0;
   META.bestKills = Math.max(META.bestKills, G.kills);
+  // M25: achievement ladder — same shape as the unlock block: evaluate from
+  // run stats at endRun only, bank NEW ones into META.achievements.
+  const achs: string[] = [];
+  if (G.kills >= 1) achs.push('firstkill');
+  if (G.kills >= 100) achs.push('kills100');
+  if (G.kills >= 500) achs.push('kills500b');
+  if (G.kills >= 2500) achs.push('kills2500');
+  if (G.time >= 600) achs.push('survivor10');
+  if (G.time >= 1200) achs.push('survivor20');
+  if (won) achs.push('winner');
+  if (G.bossKilled >= 1) achs.push('firstboss');
+  if (G.bossKilled >= 5) achs.push('boss5');
+  if (G.flushKilled) achs.push('flushkillAch');
+  if (Object.keys(G.weapons).some((id) => WEAPONS[id]?.evolved)) achs.push('evolve1');
+  if (Object.keys(G.weapons).filter((id) => WEAPONS[id]?.evolved).length >= 3) achs.push('evolve3');
+  if (G.gold >= 400) achs.push('rich');
+  if (STAGE_IDS.every((sid) => sid === 'kitchen' ? true : META.unlocked.includes(STAGES[sid].unlock))) achs.push('stagesAll');
+  lastAch = [];
+  for (const a of achs) if (!META.achievements.includes(a)) { META.achievements.push(a); lastAch.push(a); }
   // unlock checks (VS: achievements-lite) — remember which are NEW this run
   const unlocks: string[] = [];
+  // M27: THE ENDLESS stage — earned by surviving the full run AND killing the
+  // Flush (both only ever true across a kitchen victory; the septic's early
+  // kill does not ring the clock, so this is a genuine two-feat key).
+  if (won && G.time >= RUN_LEN && G.flushKilled) unlocks.push('endless');
   if (won && G.time >= RUN_LEN) unlocks.push('survive5'); // bathroom stage
+  if (won) unlocks.push('toastwin'); // M26: Toast — survive a full run
+  if (G.bossKilled >= 6) unlocks.push('boss6'); // M26: Roach — kill all 6 scheduled bosses
   if (G.time >= 600) unlocks.push('survive10'); // Hot Dog
   if (G.kills >= 500) unlocks.push('kills500'); // Avocado
   if (G.bossKilled >= 3) unlocks.push('boss3'); // M7: Plunger
@@ -145,7 +176,7 @@ export function endRun(won: boolean, flushed: boolean): void {
   if (lastUnlocks.length > 0 || G.gold > 0) saveMeta(META);
 }
 
-export function startRun(seed: number): void { G = mkGame(seed); G.mode = 'play'; setBotDir({ x: 0, y: 0 }); orbitPos = null; orbit2Pos = null; gnatPos = null; lastEvo = null; paused = false; lastUnlocks = []; newBestTime = false; fxReset(); recomputeStats(); }
+export function startRun(seed: number): void { G = mkGame(seed); G.mode = 'play'; setBotDir({ x: 0, y: 0 }); orbitPos = null; orbit2Pos = null; gnatPos = null; lastEvo = null; paused = false; lastUnlocks = []; lastAch = []; newBestTime = false; fxReset(); recomputeStats(); }
 // ---------- rendering ----------
 
 export let orbitPos: { x: number; z: number; r: number } | null = null;

@@ -94,9 +94,17 @@ export function hitFlush(dmg: number, srcX: number, srcZ: number): void {
     // the run — it's the tank's resident horror, not the clock's executioner.
     // Gold consolation + FX, and stepFlush schedules its comeback (the touch
     // ending still applies; the run still ends at 30:00).
+    // M27 ENDLESS RULE: same, but NEVER ends — and every comeback is faster
+    // and hits harder (flushGone counts reformations; stat multipliers scale
+    // with it). In ENDLESS there is no victory at 30:00 — see stepClock.
     if (STAGES[G.stage]?.earlyFlush) {
       G.gold += Math.round(250 * G.stats.goldMult);
-      G.flushBack = G.time + 60;
+      if (STAGES[G.stage].endless) {
+        G.flushWave++; // M27: counted comeback wave — speed/damage scale with it
+        G.flushBack = G.time + Math.max(15, 60 - G.flushWave * 5);
+      } else {
+        G.flushBack = G.time + 60;
+      }
       sfx('win');
       G.shake = 12; G.flashT = 0.5;
       return;

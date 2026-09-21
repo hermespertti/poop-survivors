@@ -56,6 +56,7 @@ export type Game = {
   kills: number; bossKilled: number;
   flushKilled: boolean; // M22: any Flush killed this run (unlock: flushkill → The Septic Tank)
   flushBack: number; // M22 septic: game-time the slain early Flush reforms and hunts again (0 = unset)
+  flushWave: number; // M27 endless: reformations so far — each Flush comes back faster and harder
   stats: {
     maxLevel: number; levelUps: number; gems: number; nan: number;
     shots: Record<string, number>; kbApplied: number; chestTaken: number; itemTaken: number;

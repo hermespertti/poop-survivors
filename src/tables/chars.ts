@@ -34,12 +34,22 @@ export const CHARACTERS: Record<string, {
               // small dmg bump so fuse has boss relevance.
               dmgBonus: 0.15, speedBonus: 0.10, armor: 1, hpBonus: 40, goldBonus: 0, magnetBonus: 0,
               unlock: 'minekill', unlockDesc: 'kill 1000 enemies' },
-  onion:    { name: 'Onion',    sprite: 'onion',    startWeapon: 'bouncy',
+  onion:    { name: 'Onion',    sprite: 'onion',   startWeapon: 'bouncy',
               dmgBonus: 0, speedBonus: 0, armor: 0, hpBonus: 0, goldBonus: 0.15, magnetBonus: 0,
               unlock: 'goldrun', unlockDesc: 'collect 400 gold in one run' },
+  // M26: two more. Toast is the tank identity — burnt armor, tiny speed,
+  // and the loudest kit in the kitchen (Fart Bomb). Unlock: survive a run.
+  toast:    { name: 'Toast',    sprite: 'toast',   startWeapon: 'fartbomb',
+              dmgBonus: 0, speedBonus: 0, armor: 3, hpBonus: 60, goldBonus: 0, magnetBonus: 0,
+              unlock: 'toastwin', unlockDesc: 'survive a full run' },
+  // Roach is the speed identity: cracks zoom, hard to hit, Cracker Ring
+  // orbit covers what it outruns. Unlock: kill all 6 scheduled bosses.
+  roach:    { name: 'Roach',    sprite: 'roach',   startWeapon: 'crackerring',
+              dmgBonus: 0, speedBonus: 0.25, armor: 0, hpBonus: 0, goldBonus: 0, magnetBonus: 0,
+              unlock: 'boss6', unlockDesc: 'kill all 6 bosses in one run' },
 };
 
-export const STAGES: Record<string, { name: string; unlock: string; tileA: string; tileB: string; accent: string; detail: number; scriptShift: number; waveMult?: number; letter?: string; earlyFlush?: number }> = {
+export const STAGES: Record<string, { name: string; unlock: string; tileA: string; tileB: string; accent: string; detail: number; scriptShift: number; waveMult?: number; letter?: string; earlyFlush?: number; endless?: boolean }> = {
   kitchen:  { name: 'The Kitchen',   unlock: 'default',  tileA: '#f3e2b8', tileB: '#e8cf94', accent: '#c9a35e', detail: 3,   scriptShift: 0, letter: 'K' },
   bathroom: { name: 'The Bathroom',  unlock: 'survive5', tileA: '#cfe8f6', tileB: '#a5cde6', accent: '#7fb3cf', detail: 1,   scriptShift: 60, letter: 'B' },
   compost:  { name: 'The Compost',   unlock: 'lintking', tileA: '#7a6a3f', tileB: '#655733', accent: '#4a3f24', detail: 2,   scriptShift: 120, letter: 'C' },
@@ -54,9 +64,14 @@ export const STAGES: Record<string, { name: string; unlock: string; tileA: strin
   // and KILLING it does NOT end the run — a gold consolation and you keep
   // surviving with it circling back at 30:00. Script 5 min early, waves ×1.5.
   septic:   { name: 'The Septic Tank', unlock: 'flushkill', tileA: '#3a3226', tileB: '#2f2820', accent: '#1f1a14', detail: 5,   scriptShift: 300, waveMult: 1.5, letter: 'T', earlyFlush: 1200 },
+  // M27: THE ENDLESS — unlock: kill the Flush in the Septic Tank AND kill 6
+  // bosses (flushkill+boss6). No 30:00 victory: the script never stops, the
+  // Flush reforms every 45s and each comeback is faster and hits harder.
+  // There is no winning here — only a longer BEST TIME.
+  endless:  { name: 'The Endless',   unlock: 'endless',  tileA: '#2a2118', tileB: '#211a12', accent: '#15100b', detail: 6,   scriptShift: 300, waveMult: 1.75, letter: 'E', earlyFlush: 900, endless: true },
 };
 
-export const STAGE_IDS = ['kitchen', 'bathroom', 'compost', 'sewers', 'septic'];
+export const STAGE_IDS = ['kitchen', 'bathroom', 'compost', 'sewers', 'septic', 'endless'];
 
 export const UPGRADES: { id: string; name: string; desc: string; price: number; max: number }[] = [
   { id: 'hp',   name: 'IRON STOMACH', desc: '+15 max HP each',   price: 250, max: 5 },

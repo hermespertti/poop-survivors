@@ -12,7 +12,7 @@ import { toggleFullscreen } from './canvas';
 import { damageEnemy, eDmg, nearestEnemy, nearestEnemyExcluding, wArea, wProjSpeed } from './combat';
 import { DT, DENSITY, PLAYER, RUN_LEN, SPIKE_EVERY, SPIKE_T, WORLD_H, WORLD_W } from './constants';
 import { fxGem } from './fx';
-import { G, buyUpgrade, clampNum, cycleStage, endRun, musicMsgOff, musicMsgT, muteMsgOn, muteMsgT, paused, selectedChar, startRun } from './game';
+import { G, buyUpgrade, clampNum, cycleStage, endRun, musicMsgOff, musicMsgT, muteMsgOn, muteMsgT, paused, selectedChar, setShowAch, showAch, startRun } from './game';
 import { currentMove, justPressed, keyIndex, syncKeys } from './input';
 import { gainXp, pickOption } from './levelup';
 import { META } from './meta';
@@ -43,9 +43,13 @@ function stepInput(): void {
   if (G.mode === 'levelup') {
     const idx = keyIndex('1', '2', '3', '4');
     if (idx >= 0) pickOption(idx);
+  } else if (showAch && G.mode === 'title') {
+    // M25 achievements screen: A closes it. It swallows every other key
+    // (the shop rows below are not buyable while the list is up).
+    if (justPressed('a') || justPressed('escape')) setShowAch(false);
   } else if (G.mode === 'title') {
     // character select (1-6, M13: two more chars) + stage toggle (S) + start (SPACE)
-    const chIdx = keyIndex('1', '2', '3', '4', '5', '6');
+    const chIdx = keyIndex('1', '2', '3', '4', '5', '6', '7', '8');
     if (chIdx >= 0) {
       const id = Object.keys(CHARACTERS)[chIdx];
       const ch = CHARACTERS[id];
@@ -58,6 +62,7 @@ function stepInput(): void {
     const upIdx = keyIndex('q', 'w', 'e', 'r');
     if (upIdx >= 0) buyUpgrade(UPGRADES[upIdx].id);
     if (justPressed(' ') || justPressed('enter')) startRun(G.seed);
+    if (justPressed('a')) setShowAch(true); // M25: achievements screen
   } else if (G.mode === 'dead' || G.mode === 'win') {
     if (justPressed(' ') || justPressed('enter')) startRun(G.seed);
   }
@@ -373,10 +378,15 @@ const stepFlush: Step = (p) => {
   if (!G.flush && ((G.time >= spawnT && !G.flushResolved) || reform)) {
     if (reform) G.flushBack = 0;
     const st = BOSS_STATS.flush;
+    // M27 ENDLESS: every reformation is meaner — +12% speed and +25% damage
+    // per wave (capped so a god build can still survive a few cycles).
+    const w = STAGES[G.stage]?.endless ? G.flushWave : 0;
+    const sp = Math.min(1 + w * 0.12, 2.5);
+    const dm = Math.min(1 + w * 0.25, 4);
     G.flush = {
       x: Math.max(20, Math.min(WORLD_W - 20, G.player.x + Math.cos(0) * 240)),
       z: Math.max(20, Math.min(WORLD_H - 20, G.player.z + Math.sin(0) * 240)),
-      hp: st.hp, maxHp: st.hp, speed: st.speed, dmg: st.dmg, radius: st.radius, hitT: 0, wob: 0,
+      hp: st.hp, maxHp: st.hp, speed: st.speed * sp, dmg: Math.round(st.dmg * dm), radius: st.radius, hitT: 0, wob: 0,
     };
     sfx('boss');
     G.shake = 14; G.flashT = 0.6;
@@ -457,9 +467,9 @@ const stepDirector: Step = () => {
   // fight doesn't add a 30-enemy wave; the rest of the director (waves
   // < 27:00, spikes, ambient) is untouched.
   const waveNext = Math.floor((G.time - 60) / 120) + 1;
-  if (G.time >= 60 && G.time < 1620 && G.waveIdx < waveNext) {
+  if (G.time >= 60 && (G.time < 1620 || STAGES[G.stage]?.endless) && G.waveIdx < waveNext) {
     G.waveIdx = waveNext;
-    let size = 12 + Math.floor(G.time / 60) * 3; // M13: 8+2/min → 12+3/min
+    let size = 12 + Math.floor(G.time / 60) * 3; // M13: 8+2/min → 12+3/min (M27: no 27:00 cutoff in ENDLESS — it keeps growing)
     size = Math.round(size * (STAGES[G.stage]?.waveMult || 1)); // M21: sewers ×1.25 (kitchen/others ×1 — untouched)
     size = Math.round(size * DENSITY); // M23: ×DENSITY (3× the wave, not just the cap — the cap alone never bound)
     spawnWave(Math.min(45 * DENSITY, size)); // M13: cap 30 → 45; M23: ×DENSITY → 135
@@ -495,7 +505,8 @@ const stepFxAndClock: Step = () => {
     const n = G.dmgNums[i]; n.z += n.vy * DT; n.t -= DT;
     if (n.t <= 0) G.dmgNums.splice(i, 1);
   }
-  if (G.time >= RUN_LEN) endRun(true, false);
+  // M27 ENDLESS: the clock never rings a victory — death is the only exit.
+  if (G.time >= RUN_LEN && !STAGES[G.stage]?.endless) endRun(true, false);
   return true;
 };
 

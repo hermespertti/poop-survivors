@@ -27,5 +27,7 @@ export const UNLOCK_LABEL: Record<string, string> = {
   minekill: 'CHEESE', goldrun: 'ONION', // M13
   compost: 'THE COMPOST', // M13
   flushkill: 'THE SEPTIC TANK', // M22
+  toastwin: 'TOAST', boss6: 'ROACH', // M26
+  endless: 'THE ENDLESS', // M27
 };
 

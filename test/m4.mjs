@@ -528,11 +528,11 @@ await page.evaluate(() => {
 await page.evaluate(() => window.__cap.freeze());
 
 const charRuns = [];
-for (const chId of ['crouton', 'hotdog', 'avocado', 'plunger']) {
+for (const chId of ['crouton', 'hotdog', 'avocado', 'plunger', 'cheese', 'onion', 'toast', 'roach']) {
   await page.evaluate(() => {
     const c = window.__cap;
     c.metaReset();
-    c.metaGive('survive10'); c.metaGive('kills500'); c.metaGive('boss3');
+    c.metaGive('survive10'); c.metaGive('kills500'); c.metaGive('boss3'); c.metaGive('minekill'); c.metaGive('goldrun'); c.metaGive('toastwin'); c.metaGive('boss6');
   });
   const sel = await page.evaluate((chid) => window.__cap.selectChar(chid), chId);
   const startW = await page.evaluate((chid) => {
@@ -546,7 +546,7 @@ for (const chId of ['crouton', 'hotdog', 'avocado', 'plunger']) {
   // character's OWN evolution in-play.
   await page.evaluate((sw) => {
     const c = window.__cap;
-    const pair = { fartwhip: ['quick', 'superfart'], plopcannon: ['sticky', 'stickyplop'], puddle: ['meats', 'slakelake'], spritz: ['tp', 'gunkfountain'] }[sw];
+    const pair = { fartwhip: ['quick', 'superfart'], plopcannon: ['sticky', 'stickyplop'], puddle: ['meats', 'slakelake'], spritz: ['tp', 'gunkfountain'], mine: ['fuse', 'minelord'], bouncy: ['gloves', 'superball'], fartbomb: ['breakfast', 'bigburp'], crackerring: ['widestink', 'halo'] }[sw];
     window.__evoPassive = pair ? pair[0] : null;
     if (sw) c.giveWeaponNow(sw, 8);
     if (window.__evoPassive) c.givePassiveNow(window.__evoPassive, 1);
@@ -576,6 +576,10 @@ ok(charRuns[0].lastEvo && charRuns[0].lastEvo.base === 'fartwhip' && charRuns[0]
 ok(charRuns[1].lastEvo && charRuns[1].lastEvo.base === 'plopcannon' && charRuns[1].lastEvo.to === 'stickyplop', `hotdog evolved plop → stickyplop in-run (${JSON.stringify(charRuns[1].lastEvo)})`);
 ok(charRuns[2].lastEvo && charRuns[2].lastEvo.base === 'puddle' && charRuns[2].lastEvo.to === 'slakelake', `avocado evolved puddle → slakelake in-run (${JSON.stringify(charRuns[2].lastEvo)})`);
 ok(charRuns[3].lastEvo && charRuns[3].lastEvo.base === 'spritz' && charRuns[3].lastEvo.to === 'gunkfountain', `plunger evolved spritz → gunkfountain in-run (M7, ${JSON.stringify(charRuns[3].lastEvo)})`);
+ok(charRuns[4].lastEvo && charRuns[4].lastEvo.base === 'mine' && charRuns[4].lastEvo.to === 'minelord', `cheese evolved mine → minelord in-run (M13, ${JSON.stringify(charRuns[4].lastEvo)})`);
+ok(charRuns[5].lastEvo && charRuns[5].lastEvo.base === 'bouncy' && charRuns[5].lastEvo.to === 'superball', `onion evolved bouncy → superball in-run (M13, ${JSON.stringify(charRuns[5].lastEvo)})`);
+ok(charRuns[6].lastEvo && charRuns[6].lastEvo.base === 'fartbomb' && charRuns[6].lastEvo.to === 'bigburp', `toast evolved fartbomb → bigburp in-run (M26, ${JSON.stringify(charRuns[6].lastEvo)})`);
+ok(charRuns[7].lastEvo && charRuns[7].lastEvo.base === 'crackerring' && charRuns[7].lastEvo.to === 'halo', `roach evolved ring → halo in-run (M26, ${JSON.stringify(charRuns[7].lastEvo)})`);
 
 // console clean over ALL runs
 ok(errs.length === 0, `console clean across all runs (${errs.slice(0, 2).join(' | ')})`);

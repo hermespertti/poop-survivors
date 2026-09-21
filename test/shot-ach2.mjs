@@ -1,0 +1,16 @@
+import puppeteer from 'puppeteer-core';
+import { ensureServer, URL } from './server.mjs';
+const EXE = '/usr/bin/chromium';
+const b = await puppeteer.launch({ executablePath: EXE, headless: 'new', args: ['--no-sandbox'] });
+const page = await b.newPage();
+await page.setViewport({ width: 320, height: 240, deviceScaleFactor: 3 });
+await ensureServer();
+await page.goto(URL, { waitUntil: 'networkidle0' });
+await new Promise((r) => setTimeout(r, 600));
+await page.keyboard.down('a');
+await new Promise((r) => setTimeout(r, 250));
+await page.keyboard.up('a');
+await new Promise((r) => setTimeout(r, 250));
+await page.screenshot({ path: '/tmp/m26-ach2.png' });
+await b.close();
+console.log('done');

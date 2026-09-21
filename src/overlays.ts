@@ -3,14 +3,15 @@
 
 import { setMusicMsgT, setMuteMsgT } from './game';
 
-import { SPRITES, drawScaled, drawSprite, drawText } from './art';
+import { SPRITES, drawScaled, drawSprite, drawText, textWidth } from './art';
 import { ctx } from './canvas';
 import { DT, RUN_LEN, TILE, VIEW_H, VIEW_W } from './constants';
-import { G, lastUnlocks, musicMsgOff, musicMsgT, muteMsgOn, muteMsgT, newBestTime, paused, selectedChar, selectedStage, upCost, upLvl } from './game';
+import { G, lastAch, lastUnlocks, musicMsgOff, musicMsgT, muteMsgOn, muteMsgT, newBestTime, paused, selectedChar, selectedStage, showAch, upCost, upLvl } from './game';
 import { COARSE } from './input';
 import { META } from './meta';
 import { muted } from './sfx';
 import { evoReady } from './systems';
+import { ACHIEVEMENTS } from './tables/ach';
 import { CHARACTERS, STAGES, STAGE_IDS, UPGRADES } from './tables/chars';
 import { UNLOCK_LABEL } from './tables/sprites';
 import { WEAPONS } from './tables/weapons';
@@ -54,6 +55,10 @@ export function drawFloor(cx: number, cy: number): void {
           if (h % 4 === 0) ctx.fillRect(tx * TILE - cx + (h % 10), ty * TILE - cy + ((h >> 2) % 10), 3, 2);
           if (h % 11 === 0) ctx.fillRect(tx * TILE - cx + ((h >> 1) % 14), ty * TILE - cy + ((h >> 4) % 14), 1, 2);
           if (h % 23 === 0) ctx.fillRect(tx * TILE - cx + ((h >> 3) % 12) + 2, ty * TILE - cy + 2, 1, 1);
+        } else if (st.detail === 6) {
+          // M27 THE ENDLESS: the void — sparse bone-white cracks in the dark
+          if (h % 8 === 0) ctx.fillRect(tx * TILE - cx + (h % 6), ty * TILE - cy + (h % 14), 1, 3);
+          if (h % 13 === 0) ctx.fillRect(tx * TILE - cx + ((h >> 1) % 12), ty * TILE - cy + ((h >> 2) % 8) + 3, 2, 1);
         } else {
           // kitchen (M13): sparse crumbs + a few flour streaks
           if (h % 15 === 0) ctx.fillRect(tx * TILE - cx + (h % 15) + 1, ty * TILE - cy + ((h >> 2) % 15) + 1, 1, 1);
@@ -65,7 +70,7 @@ export function drawFloor(cx: number, cy: number): void {
 }
 
 export function center(text: string, y: number, style: number, scale = 1): void {
-  const w = text.length * 7 * scale;
+  const w = textWidth(text, scale);
   drawText(ctx, text, Math.round((VIEW_W - w) / 2), y, style, scale);
 }
 
@@ -165,7 +170,7 @@ export function drawHud(t: number): void {
     ctx.fillStyle = '#5a2e4e'; ctx.fillRect(bbx, bby, bbw, 6);
     ctx.fillStyle = '#c95aa0'; ctx.fillRect(bbx, bby, Math.round(bbw * Math.max(0, G.boss.hp / G.boss.maxHp)), 6);
     const nm = G.boss.name;
-    drawText(ctx, nm, Math.round((VIEW_W - nm.length * 7) / 2), bby + 8, 1);
+    drawText(ctx, nm, Math.round((VIEW_W - textWidth(nm)) / 2), bby + 8, 1);
   }
   // FINAL FLUSH warning banner
   if (G.flush) {
@@ -220,6 +225,13 @@ export function drawEndScreen(t: number, won: boolean, flushed: boolean): void {
   if (META.bestTime > 0) center(`best ${fmt(META.bestTime)}`, y, 2);
   // unlock fanfare — anything this run earned glows white, others skip
   for (const u of lastUnlocks) { center('NEW: ' + (UNLOCK_LABEL[u] || u), y + 14, 1); }
+  // M25: achievement fanfare rides the same slot (below the unlock lines)
+  let ay = y + 14 + lastUnlocks.length * 12;
+  for (const a of lastAch) {
+    const ad = ACHIEVEMENTS.find((x) => x.id === a);
+    center('ACHIEVEMENT: ' + (ad ? ad.name : a), ay, 1);
+    ay += 12;
+  }
   // the prompt: tap on a phone, SPACE on a keyboard
   const prompt = COARSE ? (won ? 'tap to go again' : 'tap to try again') : (won ? 'press SPACE to go again' : 'press SPACE to retry');
   if (Math.floor(t * 1.6) % 2 === 0) center(prompt, 208, 1);
@@ -267,7 +279,28 @@ export function drawLevelUp(): void {
   });
 }
 
+export function drawAchScreen(t: number): void {
+  // M25: the chase list. Opens from the title with [A]. Dark panel, one row
+  // per achievement, X = earned. Keeps the 8-bit idiom (no scroll: 14 rows
+  // fit the 240px view).
+  ctx.fillStyle = 'rgba(18,12,6,0.93)';
+  ctx.fillRect(0, 0, VIEW_W, VIEW_H);
+  center('ACHIEVEMENTS', 8, 1, 2);
+  const got = META.achievements;
+  let y = 30;
+  for (const a of ACHIEVEMENTS) {
+    const has = got.includes(a.id);
+    const mark = has ? '[X]' : '[ ]';
+    drawText(ctx, `${mark} ${a.name}`, 12, y, has ? 1 : 2);
+    const right = has ? '' : 'LOCKED';
+    if (right) drawText(ctx, right, VIEW_W - 12 - textWidth(right), y, 2);
+    y += 13;
+  }
+  center(`${got.length}/${ACHIEVEMENTS.length}  PRESS A TO CLOSE`, 222, 1);
+}
+
 export function drawTitle(t: number): void {
+  if (showAch) { drawAchScreen(t); return; }
   const st = STAGES[selectedStage] || STAGES.kitchen;
   for (let ty = 0; ty < VIEW_H / TILE; ty++) {
     for (let tx = 0; tx < VIEW_W / TILE; tx++) {
@@ -315,7 +348,7 @@ export function drawTitle(t: number): void {
   center('STAGE: ' + STAGES[selectedStage].name.toUpperCase() + `  [S] (${STAGE_IDS.map((sid) => stgChar(sid)).join('')})`, 164, 0);
   // M11 gold shop (VS-style meta): banked gold finally spends. Keyboard Q/W/E/R
   // buys a row; on a phone, TAP the row. Rows match shopRowY() for hit-testing.
-  center(COARSE ? 'UPGRADES: TAP A ROW' : 'UPGRADES QWER  P PAUSE  M SOUND  N MUSIC  F FS', 176, 2);
+  center(COARSE ? 'UPGRADES: TAP A ROW    [A] CH' : 'P PAUSE  MUTE M/N  A ACHIEVEMENTS', 176, 2);
   const SHOPKEYS = ['Q', 'W', 'E', 'R'];
   const SHOPBRIEF: Record<string, string> = { hp: '+15HP', dmg: '+10%DMG', xp: '+10%XP', gold: '+10%GOLD' };
   UPGRADES.forEach((up, i) => {

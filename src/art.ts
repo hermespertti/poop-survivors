@@ -3,6 +3,7 @@
 // '.' = transparent. Palette index = one char: 0-9, a-f.
 // Sprites are validated at load: a row-length typo throws so a bad grid can
 // never silently ship as a ragged smear.
+import { FONT8X8 } from './tables/font8x8';
 
 export const PALETTE: string[] = [
   '#f3e2b8', // 0 light kitchen tile
@@ -1476,6 +1477,80 @@ const onion = mk(12, 12, onionFrames);
 const onionHit = mk(12, 12, onionFrames.map((f) => f.map((row) =>
   row.split('').map((c) => (c === 'b' ? '9' : c === '8' ? '7' : c === '5' ? 'c' : c === '4' ? '5' : c)).join(''))));
 
+// M26: toast — a slice of burnt toast with a face. Start weapon: fart bomb
+// (the smoke alarm of the kitchen). Unlock: survive a full run.
+const toastFrames: string[][] = [
+  [
+    '.4444444444.',
+    '.44eeeeee44.',
+    '.4eeeeeeee4.',
+    '.4e55ee55e4.',
+    '.4e6eee6ee4.',
+    '.4eeeeeeee4.',
+    '.4ee6666ee4.',
+    '.4eeeeeeee4.',
+    '.44eeeeee44.',
+    '.4444444444.',
+    '...2....2...',
+    '...2....2...',
+  ],
+  [
+    '.4444444444.',
+    '.44eeeeee44.',
+    '.4eeeeeeee4.',
+    '.4e55ee55e4.',
+    '.4e6eee6ee4.',
+    '.4eeeeeeee4.',
+    '.4ee6666ee4.',
+    '.4eeeeeeee4.',
+    '.44eeeeee44.',
+    '.4444444444.',
+    '...2....2...',
+    '............',
+  ],
+];
+
+// M26: roach — fast little brown cockroach. Start weapon: Cracker Ring.
+// Unlock: kill all 6 scheduled bosses in one run.
+const roachFrames: string[][] = [
+  [
+    '..4......4..',
+    '...4....4...',
+    '....4dd4....',
+    '4..45dd54..4',
+    '4.4dd4ddd4.4',
+    '44d4d4dd4d44',
+    '.4ddd4dddd4.',
+    '44d4d4dd4d44',
+    '..4dd4ddd4..',
+    '...4d4dd4...',
+    '............',
+    '............',
+  ],
+  [
+    '..4......4..',
+    '...4....4...',
+    '....4dd4....',
+    '4..45dd54..4',
+    '..4dd4ddd4..',
+    '44d4d4dd4d44',
+    '44ddd4dddd44',
+    '44d4d4dd4d44',
+    '..4dd4ddd4..',
+    '...4d4dd4...',
+    '............',
+    '............',
+  ],
+];
+
+const toast = mk(12, 12, toastFrames);
+const toastHit = mk(12, 12, toastFrames.map((f) => f.map((row) =>
+  row.split('').map((c) => (c === 'e' ? 'c' : c === 'd' ? 'f' : c === '6' ? 'e' : c)).join(''))));
+
+const roach = mk(12, 12, roachFrames);
+const roachHit = mk(12, 12, roachFrames.map((f) => f.map((row) =>
+  row.split('').map((c) => (c === 'd' ? 'e' : c === 'c' ? 'f' : c)).join(''))));
+
 // ---------- M13: three new weapon icons (8x8) ----------
 // turret — a dropped plop turret (dark base, brown barrel, gold plop on top).
 const turret = mk(8, 8, [
@@ -1520,6 +1595,7 @@ const boomer = mk(8, 8, [
 export const SPRITES: Record<string, Sprite> = {
   crouton, croutonHit, bubble, bubbleHit, gem, bolt,
   boulder, boulderHit, shell, shellHit, cheese, cheeseHit, onion, onionHit, // M13
+  toast, toastHit, roach, roachHit, // M26
   turret, trail, boomer, // M13 weapons
   plop, spit, cracker, boss, bossHit, chest,
   droplet, crumb, crumbHit, mop, mopHit, stink, stinkHit,
@@ -1534,66 +1610,6 @@ export const SPRITES: Record<string, Sprite> = {
   mine, gnat, chainfart,
 };
 
-// ---------- 8x8 bitmap font ----------
-// Ink is the char '1' (rendered in the chosen color); '.' is blank.
-function g(rows: string[]): string[] { return rows; }
-const F: Record<string, string[]> = {
-  A: g(['..111..','..1..1.','..1..1.','..111..','..1..1.','..1..1.','..1..1.','.......']),
-  B: g(['..111..','..1..1.','..1..1.','..111..','..1..1.','..1..1.','..111..','.......']),
-  C: g(['..111..','..1..1.','..1....','..1....','..1....','..1..1.','..111..','.......']),
-  D: g(['..111..','..1..1.','..1..1.','..1..1.','..1..1.','..1..1.','..111..','.......']),
-  E: g(['..111..','..1....','..1....','..111..','..1....','..1....','..111..','.......']),
-  F: g(['..111..','..1....','..1....','..111..','..1....','..1....','..1....','.......']),
-  G: g(['..111..','..1..1.','..1....','..1..1.','..1..1.','..1..1.','..111..','.......']),
-  H: g(['..1..1.','..1..1.','..1..1.','..111..','..1..1.','..1..1.','..1..1.','.......']),
-  I: g(['.11111.','...1...','...1...','...1...','...1...','...1...','.11111.','.......']),
-  J: g(['...11..','...1...','...1...','...1...','...1...','..11...','..1....','.......']),
-  K: g(['..1..1.','..1.1..','..11...','..11...','..1.1..','..1..1.','..1..1.','.......']),
-  L: g(['..1....','..1....','..1....','..1....','..1....','..1....','..111..','.......']),
-  M: g(['..1..1.','..1.1..','..1..1.','..1..1.','..1..1.','..1..1.','..1..1.','.......']),
-  N: g(['..1..1.','..1..1.','..11.1.','..1.1..','..1..1.','..1..1.','..1..1.','.......']),
-  O: g(['..111..','..1..1.','..1..1.','..1..1.','..1..1.','..1..1.','..111..','.......']),
-  P: g(['..111..','..1..1.','..111..','..1....','..1....','..1....','..1....','.......']),
-  Q: g(['..111..','..1..1.','..1..1.','..1..1.','..1.1..','..1..1.','..11.1.','.......']),
-  R: g(['..111..','..1..1.','..111..','..1.1..','..1..1.','..1..1.','..1..1.','.......']),
-  S: g(['..111..','..1....','..1....','..111..','....1..','....1..','..111..','.......']),
-  T: g(['..111..','...1...','...1...','...1...','...1...','...1...','...1...','.......']),
-  U: g(['..1..1.','..1..1.','..1..1.','..1..1.','..1..1.','..1..1.','..111..','.......']),
-  V: g(['..1..1.','..1..1.','..1..1.','..1..1.','..1..1.','...1...','...1...','.......']),
-  W: g(['..1..1.','..1..1.','..1..1.','..1..1.','..1..1.','..1.1..','..1..1.','.......']),
-  X: g(['..1..1.','..1..1.','...1...','...1...','..1..1.','..1..1.','..1..1.','.......']),
-  Y: g(['..1..1.','..1..1.','...1...','...1...','...1...','...1...','...1...','.......']),
-  Z: g(['..111..','....1..','...1...','..1....','..1....','..1....','..111..','.......']),
-  // M13: legible digits (human feedback: damage numbers + clock "don't look
-  // like numbers" — the old 1px-diagonal 2/4/7/8/9 smeared into scribbles
-  // after the M12 bold dilation). Blocky, no diagonals, same 5-col idiom as
-  // the letters.
-  '0': g(['..111..','..1.1..','..1.1..','..1.1..','..1.1..','..1.1..','..111..','.......']),
-  '1': g(['...1...','..11...','...1...','...1...','...1...','...1...','..11...','.......']),
-  '2': g(['..111..','....1..','....1..','..111..','..1....','..1....','..111..','.......']),
-  '3': g(['..111..','....1..','....1..','..111..','....1..','....1..','..111..','.......']),
-  '4': g(['...1...','..11...','.1.1...','1...1..','.1111..','...1...','...1...','.......']),
-  '5': g(['..111..','..1....','..1....','..111..','....1..','....1..','..111..','.......']),
-  '6': g(['..111..','..1....','..1....','..111..','..1.1..','..1.1..','..111..','.......']),
-  '7': g(['..111..','....1..','...1...','...1...','..1....','..1....','..1....','.......']),
-  '8': g(['..111..','..1.1..','..1.1..','..111..','..1.1..','..1.1..','..111..','.......']),
-  '9': g(['..111..','..1.1..','..1.1..','..111..','....1..','....1..','..111..','.......']),
-  ' ': g(['.......','.......','.......','.......','.......','.......','.......','.......']),
-  ':': g(['.......','...1...','...1...','.......','...1...','...1...','...1...','.......']),
-  '-': g(['.......','.......','.......','..111..','.......','.......','.......','.......']),
-  '/': g(['.....1.','.....1.','....1..','...1...','..1....','.1.....','.......','.......']),
-  '|': g(['...1...','...1...','...1...','...1...','...1...','...1...','...1...','.......']),
-  '!': g(['...1...','...1...','...1...','...1...','...1...','.......','...1...','.......']),
-  '.': g(['.......','.......','.......','.......','.......','.......','..1....','..1....']),
-  '+': g(['.......','...1...','...1...','.1111..','...1...','...1...','.......','.......']),
-  ',': g(['.......','.......','.......','.......','.......','..1....','..1....','.1.....']),
-  '(': g(['...1...','..1....','..1....','..1....','..1....','..1....','...1...','.......']),
-  ')': g(['...1...','....1..','....1..','....1..','....1..','....1..','...1...','.......']),
-  '[': g(['..111..','..1....','..1....','..1....','..1....','..1....','..111..','.......']),
-  ']': g(['..111..','....1..','....1..','....1..','....1..','....1..','..111..','.......']),
-  '?': g(['..111..','....1..','...1...','..1....','..1....','.......','..1....','.......']),
-  '%': g(['.11..1.','....1..','...1...','...1...','..1....','..1....','.......','.......']),
-};
 
 export function drawSprite(
   ctx: CanvasRenderingContext2D, spr: Sprite, px: number, py: number, frame: number,
@@ -1650,54 +1666,70 @@ export function drawScaled(
   }
 }
 
-export function drawText(
-  ctx: CanvasRenderingContext2D, text: string, x: number, y: number, style: number, scale = 1,
-): void {
-  // 0 = dark outline (default), 1 = white, 2 = medium brown (secondary text)
-  // scale=2 for big screens (title, LEVEL UP, overlays) — doubles each font
-  // pixel for readability while keeping the bitmap look.
-  // M11 per-style halos: white ink keeps the near-black outline (pops on
-  // bright floors), dark/medium ink gets a LIGHT parchment outline so it
-  // reads on dark overlays, bars and the letterbox — the pre-M11 single
-  // near-black halo washed dark-brown text out on the death/win screens and
-  // the letterbox border (measured: m11-before-dead.png, the sub-lines were
-  // brown-on-brown). Light halo on a bright floor is invisible — no change
-  // where the text already read.
+// ---------- text ----------
+// M24: the hand-made 7px font + fake-bold is gone. We now render the full
+// public-domain IBM 8x8 font (font8x8, see tables/font8x8.ts) with a TRUE
+// 1-pixel outline: a cell is outlined only when the cell itself is NOT ink,
+// so strokes never clog (the old M12 bold filled the counters of P/O/A and
+// smeared the dense title — vision QA: "POOP" read as "POOF", brackets read
+// as C). No fake bold: the IBM font already has solid 1px strokes; with an
+// outline around every glyph it reads crisp at 320x240 on the checkerboard.
+// Glyph tiles (outline+ink) are cached per style on an offscreen canvas and
+// blitted — ~1 drawImage per character instead of ~40 fillRects.
+// Advance is 8px now; `center`/boss-name callers go through textWidth().
+export function textWidth(text: string, scale = 1): number {
+  return text.length * 8 * scale;
+}
+
+const glyphCache: Record<number, Record<string, HTMLCanvasElement>> = {};
+function glyphTile(ch: string, style: number, scale: number): HTMLCanvasElement {
+  let styleCache = glyphCache[style];
+  if (!styleCache) styleCache = glyphCache[style] = {};
+  const key = ch + '@' + scale;
+  let tile = styleCache[key];
+  if (tile) return tile;
   const ink = style === 1 ? PALETTE[5] : style === 2 ? '#7d4a12' : PALETTE[4];
-  const halo = style === 1 ? PALETTE[15] : PALETTE[0];
-  const px = (i: number, c: number) => x + i * 7 * scale + c * scale;
-  const py = (r: number) => y + r * scale;
-  // M12 BOLD: every ink pixel is rendered as a 2x2 block ((0,0),(+1,0),(0,+1)
-  // in scale units — the classic bitmap-bolding trick), so the 1px strokes of
-  // the 7x8 master become chunky 2px strokes at every scale. Pre-M12 the
-  // hairline ink washed out on the checkered floor and the small secondary
-  // lines read as mud (human feedback: "too small / hard to read"). The 7px
-  // advance is unchanged, so no caller's width math moves; the halo covers
-  // the thickened ink with one 4x4 block per pixel (±1 around the 2x2).
-  // Style 2's ink also darkened (#a5651d -> #7d4a12): the old medium brown
-  // sat at the same value as the tan floor band.
-  ctx.fillStyle = halo;
-  for (let i = 0; i < text.length; i++) {
-    const glyph = F[text[i].toUpperCase()] ?? F['?'];
-    for (let r = 0; r < 8; r++) {
-      const row = glyph[r];
-      for (let c = 0; c < 7; c++) {
-        if (row[c] !== '1') continue;
-        ctx.fillRect(px(i, c) - scale, py(r) - scale, 4 * scale, 4 * scale);
+  const outline = '#000000';
+  tile = document.createElement('canvas');
+  tile.width = 8 * scale + 2; // 1px outline border on each side
+  tile.height = 8 * scale + 2;
+  const gctx = tile.getContext('2d')!;
+  const glyph = FONT8X8[ch] ?? FONT8X8['?'];
+  const at = (r: number, c: number) => {
+    if (r < 0 || r > 7 || c < 0 || c > 7) return false;
+    return glyph[r][c] === '1';
+  };
+  gctx.fillStyle = outline;
+  for (let r = 0; r < 8; r++) {
+    for (let c = 0; c < 8; c++) {
+      if (at(r, c)) continue;
+      if (at(r - 1, c) || at(r + 1, c) || at(r, c - 1) || at(r, c + 1) ||
+          at(r - 1, c - 1) || at(r - 1, c + 1) || at(r + 1, c - 1) || at(r + 1, c + 1)) {
+        gctx.fillRect(1 + c * scale, 1 + r * scale, scale, scale);
       }
     }
   }
-  ctx.fillStyle = ink;
-  for (let i = 0; i < text.length; i++) {
-    const glyph = F[text[i].toUpperCase()] ?? F['?'];
-    for (let r = 0; r < 8; r++) {
-      const row = glyph[r];
-      for (let c = 0; c < 7; c++) {
-        if (row[c] !== '1') { continue; }
-        ctx.fillRect(px(i, c), py(r), scale, scale);
-        ctx.fillRect(px(i, c) + scale, py(r), scale, scale);
-        ctx.fillRect(px(i, c), py(r) + scale, scale, scale);
-      }
+  gctx.fillStyle = ink;
+  for (let r = 0; r < 8; r++) {
+    for (let c = 0; c < 8; c++) {
+      if (at(r, c)) gctx.fillRect(1 + c * scale, 1 + r * scale, scale, scale);
     }
+  }
+  styleCache[key] = tile;
+  return tile;
+}
+
+export function drawText(
+  ctx: CanvasRenderingContext2D, text: string, x: number, y: number, style: number, scale = 1,
+): void {
+  // 0 = dark ink (default), 1 = white, 2 = medium brown (secondary text).
+  // lowercase input renders via the uppercase glyph (classic 8-bit idiom).
+  const cache = glyphCache[style];
+  for (let i = 0; i < text.length; i++) {
+    let ch = text[i];
+    if (ch < ' ' || ch > '~') ch = String.fromCharCode(text[i].toUpperCase().charCodeAt(0));
+    if (!FONT8X8[ch]) ch = '?';
+    const tile = cache ? cache[ch + '@' + scale] ?? glyphTile(ch, style, scale) : glyphTile(ch, style, scale);
+    ctx.drawImage(tile, x + i * 8 * scale - 1, y - 1);
   }
 }
